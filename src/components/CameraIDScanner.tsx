@@ -1,12 +1,41 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, X, Lock, ShieldCheck, ShieldX, Hand } from "lucide-react";
+import { Camera, X, Lock, ShieldCheck, ShieldX, Hand, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 
-function generateHash() {
-  return Math.random().toString(16).slice(2, 10);
+// Module-level hints — PDF417 only for speed
+const PDF417_HINTS = new Map<DecodeHintType, unknown>();
+PDF417_HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.PDF_417]);
+
+// AAMVA PDF417 DL format parsing
+function parseAAMVA(text: string): { dlNumber: string | null; dobMMDDYYYY: string | null } {
+  const dlMatch = text.match(/DAQ([^\n\r\u001e\u001c]+)/);
+  const dobMatch = text.match(/DBB(\d{8})/);
+  return {
+    dlNumber: dlMatch?.[1]?.trim() ?? null,
+    dobMMDDYYYY: dobMatch?.[1] ?? null,
+  };
 }
 
-type ScanStep = "idle" | "camera" | "flash" | "processing" | "result";
+function isOver21(dobMMDDYYYY: string): boolean {
+  const mm = parseInt(dobMMDDYYYY.slice(0, 2), 10) - 1;
+  const dd = parseInt(dobMMDDYYYY.slice(2, 4), 10);
+  const yyyy = parseInt(dobMMDDYYYY.slice(4, 8), 10);
+  const dob = new Date(yyyy, mm, dd);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 21);
+  return dob <= cutoff;
+}
+
+async function sha256hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+type ScanStep = "idle" | "camera" | "flash" | "processing" | "result" | "no_barcode";
 
 interface ScanResult {
   hash: string;
@@ -23,6 +52,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
 
   const [step, setStep] = useState<ScanStep>("idle");
   const [processProgress, setProcessProgress] = useState(0);
@@ -35,7 +65,72 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    codeReaderRef.current?.reset();
+    codeReaderRef.current = null;
   }, []);
+
+  const processBarcode = useCallback(
+    async (text: string) => {
+      setProcessLabel("Parsing license data...");
+      setProcessProgress(50);
+
+      const { dlNumber, dobMMDDYYYY } = parseAAMVA(text);
+      const identifier = dlNumber ?? text;
+      const hash = await sha256hex(identifier);
+
+      setProcessLabel("Hashing identity...");
+      setProcessProgress(80);
+
+      // Age check — only if DOB was parsed; if can't parse, allow through (staff judgment)
+      const denied = dobMMDDYYYY ? !isOver21(dobMMDDYYYY) : false;
+
+      setProcessProgress(100);
+
+      const scanResult: ScanResult = {
+        hash,
+        denied,
+        isReturning: false,
+        visitCount: undefined,
+      };
+
+      setResult(scanResult);
+      setStep("result");
+
+      if (!denied) {
+        onEntry(scanResult);
+      }
+
+      setTimeout(() => {
+        setStep("idle");
+        setResult(null);
+      }, 5000);
+    },
+    [onEntry]
+  );
+
+  const startAutoScan = useCallback(
+    (videoEl: HTMLVideoElement) => {
+      const reader = new BrowserMultiFormatReader(PDF417_HINTS);
+      codeReaderRef.current = reader;
+
+      reader
+        .decodeFromVideoElement(videoEl)
+        .then((result) => {
+          stopCamera();
+          setStep("flash");
+          setTimeout(() => {
+            setStep("processing");
+            setProcessProgress(20);
+            setProcessLabel("Reading barcode...");
+            processBarcode(result.getText());
+          }, 300);
+        })
+        .catch(() => {
+          // Cancelled or error — no-op
+        });
+    },
+    [stopCamera, processBarcode]
+  );
 
   const startCamera = useCallback(async () => {
     setStep("camera");
@@ -48,12 +143,13 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
+        startAutoScan(videoRef.current);
       }
     } catch {
       setCameraError(true);
     }
-  }, []);
+  }, [startAutoScan]);
 
   const cancelCamera = useCallback(() => {
     stopCamera();
@@ -61,70 +157,33 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
     setResult(null);
   }, [stopCamera]);
 
-  const captureFrame = useCallback(() => {
-    if (videoRef.current && canvasRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
-      canvasRef.current.width = videoRef.current.videoWidth || 640;
-      canvasRef.current.height = videoRef.current.videoHeight || 480;
-      ctx?.drawImage(videoRef.current, 0, 0);
-    }
+  // Manual capture — tries to decode the current frame on demand
+  const captureFrame = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
+
     stopCamera();
-
     setStep("flash");
-    setTimeout(() => {
+
+    setTimeout(async () => {
       setStep("processing");
-      runProcessingAnimation();
-    }, 300);
-  }, [stopCamera]);
+      setProcessProgress(20);
+      setProcessLabel("Reading barcode...");
 
-  const runProcessingAnimation = useCallback(() => {
-    setProcessProgress(0);
-    setProcessLabel("Analyzing barcode...");
-
-    const start = Date.now();
-    const phase1 = setInterval(() => {
-      const elapsed = Date.now() - start;
-      const pct = Math.min(80, (elapsed / 1000) * 80);
-      setProcessProgress(pct);
-      if (pct >= 80) {
-        clearInterval(phase1);
-        setProcessLabel("Processing...");
-        const start2 = Date.now();
-        const phase2 = setInterval(() => {
-          const elapsed2 = Date.now() - start2;
-          const pct2 = Math.min(100, 80 + (elapsed2 / 600) * 20);
-          setProcessProgress(pct2);
-          if (pct2 >= 100) {
-            clearInterval(phase2);
-            setTimeout(() => showResult(), 200);
-          }
-        }, 30);
+      try {
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        const reader = new BrowserMultiFormatReader(PDF417_HINTS);
+        const decoded = await reader.decodeFromImageUrl(dataUrl);
+        await processBarcode(decoded.getText());
+      } catch {
+        setStep("no_barcode");
       }
-    }, 30);
-  }, []);
-
-  const showResult = useCallback(() => {
-    const denied = Math.random() < 0.1;
-    const hash = generateHash();
-    const isReturning = !denied && Math.random() < 0.3;
-    const scanResult: ScanResult = {
-      hash,
-      denied,
-      isReturning,
-      visitCount: isReturning ? Math.floor(Math.random() * 8) + 2 : undefined,
-    };
-    setResult(scanResult);
-    setStep("result");
-
-    if (!denied) {
-      onEntry(scanResult);
-    }
-
-    setTimeout(() => {
-      setStep("idle");
-      setResult(null);
-    }, 5000);
-  }, [onEntry]);
+    }, 300);
+  }, [stopCamera, processBarcode]);
 
   useEffect(() => {
     return () => stopCamera();
@@ -151,16 +210,18 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
           <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
           <canvas ref={canvasRef} className="hidden" />
 
+          {/* Corner guides */}
           <div className="absolute top-3 left-3 w-10 h-10 border-t-2 border-l-2 border-primary" />
           <div className="absolute top-3 right-3 w-10 h-10 border-t-2 border-r-2 border-primary" />
           <div className="absolute bottom-3 left-3 w-10 h-10 border-b-2 border-l-2 border-primary" />
           <div className="absolute bottom-3 right-3 w-10 h-10 border-b-2 border-r-2 border-primary" />
 
+          {/* Scan line animation */}
           <div className="absolute left-3 right-3 h-0.5 bg-primary shadow-[0_0_8px_hsl(var(--primary))] animate-scan-line" />
 
           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8">
             <p className="text-foreground/80 text-xs text-center">
-              Point camera at back of Driver's License
+              Point camera at the <strong>back</strong> of the Driver's License — auto-detects barcode
             </p>
           </div>
 
@@ -168,7 +229,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
             <div className="absolute inset-0 flex items-center justify-center bg-secondary/90">
               <div className="text-center space-y-2">
                 <p className="text-muted-foreground text-sm">Camera unavailable</p>
-                <p className="text-muted-foreground text-xs">Tap capture to simulate scan</p>
+                <p className="text-muted-foreground text-xs">Tap capture to try manually</p>
               </div>
             </div>
           )}
@@ -183,9 +244,9 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
 
         <button
           onClick={captureFrame}
-          className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl mt-3 flex items-center justify-center gap-2 text-lg transition-all hover:glow-gold active:scale-[0.98]"
+          className="w-full touch-target border border-border rounded-xl font-medium flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all mt-3"
         >
-          <Camera className="w-5 h-5" /> Capture ID
+          <Camera className="w-4 h-4" /> Capture Manually
         </button>
       </div>
     );
@@ -212,11 +273,33 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
             </div>
             <Progress value={processProgress} className="h-2" />
           </div>
-          {processProgress >= 80 && (
+          {processProgress >= 50 && (
             <p className="text-xs text-muted-foreground text-center animate-fade-in flex items-center justify-center gap-1">
-              <Lock className="w-3 h-3" /> Hashing identity data...
+              <Lock className="w-3 h-3" /> SHA-256 hashing — no PII stored
             </p>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // NO BARCODE FOUND
+  if (step === "no_barcode") {
+    return (
+      <div className="mb-4 animate-fade-in">
+        <div className="w-full max-w-[480px] mx-auto bg-warning/10 border border-warning/30 rounded-xl p-5 text-center space-y-3">
+          <p className="text-warning font-semibold flex items-center justify-center gap-2">
+            <AlertCircle className="w-5 h-5" /> No barcode detected
+          </p>
+          <p className="text-muted-foreground text-sm">
+            Make sure the back of the ID is flat and well-lit.
+          </p>
+          <button
+            onClick={startCamera}
+            className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 transition-all hover:glow-gold"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
@@ -243,11 +326,11 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
             <ShieldCheck className="w-7 h-7" /> AGE VERIFIED: 21+
           </p>
           <p className="text-primary font-medium flex items-center justify-center gap-1">
-            <Lock className="w-4 h-4" /> User ID: <span className="font-mono">#{result.hash}</span>
+            <Lock className="w-4 h-4" /> ID: <span className="font-mono">#{result.hash.slice(0, 8).toUpperCase()}</span>
           </p>
           {result.isReturning && (
             <p className="text-muted-foreground text-sm flex items-center justify-center gap-1">
-              <Hand className="w-4 h-4" /> Welcome back — Visit #{result.visitCount} this month
+              <Hand className="w-4 h-4" /> Welcome back — Visit #{result.visitCount}
             </p>
           )}
           {!result.isReturning && (

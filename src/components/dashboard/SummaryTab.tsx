@@ -4,11 +4,11 @@ import {
   AreaChart, Area
 } from "recharts";
 import { ArrowUp, ArrowDown, Crown, DoorOpen, Sofa, Home, Wallet, Users, User, Music, Timer, Repeat, Trophy, CalendarDays } from "lucide-react";
-import { periodData, periodKeys, topPerformers, generateHeatmap, type Period } from "./mockData";
+import { periodKeys, type Period } from "./mockData";
 import { useCountUp } from "./useCountUp";
 import { DateFilter } from "./DateFilter";
-
-const heatmapDays = generateHeatmap();
+import { useDashboardStats, useRevenueChartData, useMonthlyHeatmap } from "@/hooks/useDashboardData";
+import { useDancerPerformance } from "@/hooks/useDashboardData";
 
 const chartTooltipStyle = {
   backgroundColor: "hsl(240 15% 10%)",
@@ -17,24 +17,10 @@ const chartTooltipStyle = {
   color: "white",
 };
 
-const kpiIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  door: DoorOpen,
-  sofa: Sofa,
-  home: Home,
-  wallet: Wallet,
-};
-
-const opsIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  users: Users,
-  user: User,
-  music: Music,
-  timer: Timer,
-  repeat: Repeat,
-};
-
 function KPICard({ label, value, prefix, icon, trend, animKey }: { label: string; value: number; prefix: string; icon: string; trend: number; animKey: string }) {
   const animated = useCountUp(value, 1200, animKey);
-  const IconComp = kpiIcons[icon];
+  const icons: Record<string, React.ComponentType<{ className?: string }>> = { door: DoorOpen, sofa: Sofa, home: Home, wallet: Wallet };
+  const IconComp = icons[icon];
   return (
     <div className="glass-card p-5 hover:border-primary/30 transition-all">
       <div className="flex items-center justify-between mb-1">
@@ -54,7 +40,8 @@ function KPICard({ label, value, prefix, icon, trend, animKey }: { label: string
 
 function OpsCard({ label, value, icon, suffix, animKey }: { label: string; value: number; icon: string; suffix?: string; animKey: string }) {
   const animated = useCountUp(value, 1000, animKey);
-  const IconComp = opsIcons[icon];
+  const icons: Record<string, React.ComponentType<{ className?: string }>> = { users: Users, user: User, music: Music, timer: Timer, repeat: Repeat };
+  const IconComp = icons[icon];
   return (
     <div className="glass-card p-4">
       {IconComp && <IconComp className="w-4 h-4 text-muted-foreground" />}
@@ -68,7 +55,26 @@ function OpsCard({ label, value, icon, suffix, animKey }: { label: string; value
 
 export function SummaryTab() {
   const [activePeriod, setActivePeriod] = useState<Period>("Today");
-  const data = periodData[periodKeys[activePeriod]];
+  const { stats, isLoading } = useDashboardStats(activePeriod);
+  const { chartData, splitData } = useRevenueChartData(activePeriod);
+  const { heatmap } = useMonthlyHeatmap();
+  const { performance } = useDancerPerformance(activePeriod);
+
+  const topPerformers = performance.slice(0, 3).map((d, i) => ({ rank: i + 1, ...d }));
+
+  const kpis = [
+    { label: "Door Revenue", value: stats.doorRevenue, prefix: "$", icon: "door", trend: 0 },
+    { label: "Room Revenue", value: stats.roomRevenue, prefix: "$", icon: "sofa", trend: 0 },
+    { label: "House Net", value: stats.houseNet, prefix: "$", icon: "home", trend: 0 },
+    { label: "Payouts Owed", value: stats.payoutsOwed, prefix: "$", icon: "wallet", trend: 0 },
+  ];
+
+  const ops = [
+    { label: "Total Guests", value: stats.totalGuests, icon: "users" },
+    { label: "Active Dancers", value: stats.activeDancerCount, icon: "user", suffix: "" },
+    { label: "Room Sessions", value: stats.roomSessionCount, icon: "music" },
+    { label: "Returning Guests", value: stats.returningPct, icon: "repeat", suffix: "%" },
+  ];
 
   const heatmapColor = (rev: number) => {
     if (rev === 0) return "bg-[hsl(240_10%_10%)]";
@@ -78,16 +84,8 @@ export function SummaryTab() {
     return "bg-primary";
   };
 
-  const rankIcons = [
-    null,
-    <Crown key="1" className="w-6 h-6 text-primary mx-auto mb-1" />,
-    null,
-    null,
-  ];
-
   return (
     <div>
-      {/* Date Filter */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <p className="text-muted-foreground text-sm">
           {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
@@ -95,26 +93,33 @@ export function SummaryTab() {
         <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} />
       </div>
 
-      {/* KPI Row 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {data.kpis.map((kpi, i) => (
-          <KPICard key={i} {...kpi} animKey={activePeriod + i} />
-        ))}
-      </div>
-
-      {/* KPI Row 2 — Ops */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-        {data.ops.map((op, i) => (
-          <OpsCard key={i} {...op} animKey={activePeriod + "op" + i} />
-        ))}
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="glass-card p-5 animate-pulse h-28 bg-secondary/40" />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {kpis.map((kpi, i) => (
+              <KPICard key={i} {...kpi} animKey={activePeriod + i} />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+            {ops.map((op, i) => (
+              <OpsCard key={i} {...op} animKey={activePeriod + "op" + i} />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div className="glass-card p-6">
           <h2 className="font-heading text-3xl tracking-wide mb-4">Revenue by Period</h2>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={data.chart}>
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 12% 16%)" />
               <XAxis dataKey="period" stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} />
               <YAxis stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} />
@@ -130,7 +135,7 @@ export function SummaryTab() {
         <div className="glass-card p-6">
           <h2 className="font-heading text-3xl tracking-wide mb-4">House vs Dancer Split</h2>
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data.split}>
+            <AreaChart data={splitData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 12% 16%)" />
               <XAxis dataKey="period" stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} />
               <YAxis stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} />
@@ -145,29 +150,31 @@ export function SummaryTab() {
       </div>
 
       {/* Top Performers Podium */}
-      <div className="glass-card p-6 mb-8">
-        <h2 className="font-heading text-3xl tracking-wide mb-6 flex items-center gap-2">
-          <Trophy className="w-6 h-6 text-primary" /> Top Performers
-        </h2>
-        <div className="flex items-end justify-center gap-4">
-          {[topPerformers[1], topPerformers[0], topPerformers[2]].map((p) => (
-            <div
-              key={p.rank}
-              className={`glass-card p-4 text-center transition-all ${
-                p.rank === 1 ? "w-40 pb-6 border-primary/40 glow-gold" : "w-36"
-              }`}
-              style={{ minHeight: p.rank === 1 ? 180 : p.rank === 2 ? 150 : 130 }}
-            >
-              {p.rank === 1 && <Crown className="w-6 h-6 text-primary mx-auto mb-1" />}
-              <p className="text-2xl mb-1 font-heading text-primary">#{p.rank}</p>
-              <p className="font-heading text-xl">{p.name}</p>
-              <p className="text-muted-foreground text-xs">{p.sessions} sessions</p>
-              <p className="text-primary font-heading text-lg">${p.gross}</p>
-              <p className="text-xs text-muted-foreground">Payout: ${p.payout}</p>
-            </div>
-          ))}
+      {topPerformers.length >= 3 && (
+        <div className="glass-card p-6 mb-8">
+          <h2 className="font-heading text-3xl tracking-wide mb-6 flex items-center gap-2">
+            <Trophy className="w-6 h-6 text-primary" /> Top Performers
+          </h2>
+          <div className="flex items-end justify-center gap-4">
+            {[topPerformers[1], topPerformers[0], topPerformers[2]].map((p) => (
+              <div
+                key={p.rank}
+                className={`glass-card p-4 text-center transition-all ${
+                  p.rank === 1 ? "w-40 pb-6 border-primary/40 glow-gold" : "w-36"
+                }`}
+                style={{ minHeight: p.rank === 1 ? 180 : p.rank === 2 ? 150 : 130 }}
+              >
+                {p.rank === 1 && <Crown className="w-6 h-6 text-primary mx-auto mb-1" />}
+                <p className="text-2xl mb-1 font-heading text-primary">#{p.rank}</p>
+                <p className="font-heading text-xl">{p.name}</p>
+                <p className="text-muted-foreground text-xs">{p.sessions} sessions</p>
+                <p className="text-primary font-heading text-lg">${p.gross}</p>
+                <p className="text-xs text-muted-foreground">Payout: ${p.netPayout}</p>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Monthly Heatmap */}
       <div className="glass-card p-6 mb-8">
@@ -180,7 +187,7 @@ export function SummaryTab() {
           ))}
         </div>
         <div className="grid grid-cols-7 gap-1.5">
-          {heatmapDays.map((day, i) => (
+          {heatmap.map((day, i) => (
             <div key={i} className="aspect-square relative group">
               {day ? (
                 <div className={`w-full h-full rounded-lg flex items-center justify-center text-xs font-medium transition-all cursor-default ${heatmapColor(day.revenue)} ${day.isToday ? "ring-2 ring-foreground" : ""}`}>

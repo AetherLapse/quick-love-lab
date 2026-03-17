@@ -52,6 +52,38 @@ export type Database = {
           },
         ]
       }
+      behaviour_notes: {
+        Row: {
+          author_id: string
+          created_at: string
+          dancer_id: string
+          id: string
+          note_text: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          dancer_id: string
+          id?: string
+          note_text: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          dancer_id?: string
+          id?: string
+          note_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "behaviour_notes_dancer_id_fkey"
+            columns: ["dancer_id"]
+            isOneToOne: false
+            referencedRelation: "dancers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       club_settings: {
         Row: {
           default_dancer_entrance_fee: number
@@ -75,6 +107,39 @@ export type Database = {
           default_door_fee?: number
           id?: string
           song_price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      clubs: {
+        Row: {
+          api_key: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          owner_email: string | null
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          api_key?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          owner_email?: string | null
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          api_key?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          owner_email?: string | null
+          slug?: string
           updated_at?: string
         }
         Relationships: []
@@ -103,39 +168,175 @@ export type Database = {
         }
         Relationships: []
       }
+      dancer_event_log: {
+        Row: {
+          author_id: string | null
+          created_at: string
+          dancer_id: string
+          event_type: Database["public"]["Enums"]["dancer_event_type"]
+          id: string
+          payload: Json
+        }
+        Insert: {
+          author_id?: string | null
+          created_at?: string
+          dancer_id: string
+          event_type: Database["public"]["Enums"]["dancer_event_type"]
+          id?: string
+          payload?: Json
+        }
+        Update: {
+          author_id?: string | null
+          created_at?: string
+          dancer_id?: string
+          event_type?: Database["public"]["Enums"]["dancer_event_type"]
+          id?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dancer_event_log_dancer_id_fkey"
+            columns: ["dancer_id"]
+            isOneToOne: false
+            referencedRelation: "dancers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dancers: {
         Row: {
           created_at: string
+          email: string | null
           employee_id: string
           entrance_fee: number
+          facial_hash: string | null
+          full_name: string | null
+          govt_id_token: string | null
           id: string
           is_active: boolean
+          live_status: Database["public"]["Enums"]["dancer_live_status"]
+          onboarding_complete: boolean
           payout_percentage: number
+          phone: string | null
           pin_code: string
+          popularity_score: number
+          profile_photo_url: string | null
+          ssn_token: string | null
           stage_name: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          email?: string | null
           employee_id: string
           entrance_fee?: number
+          facial_hash?: string | null
+          full_name?: string | null
+          govt_id_token?: string | null
           id?: string
           is_active?: boolean
+          live_status?: Database["public"]["Enums"]["dancer_live_status"]
+          onboarding_complete?: boolean
           payout_percentage?: number
+          phone?: string | null
           pin_code: string
+          popularity_score?: number
+          profile_photo_url?: string | null
+          ssn_token?: string | null
           stage_name: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          email?: string | null
           employee_id?: string
           entrance_fee?: number
+          facial_hash?: string | null
+          full_name?: string | null
+          govt_id_token?: string | null
           id?: string
           is_active?: boolean
+          live_status?: Database["public"]["Enums"]["dancer_live_status"]
+          onboarding_complete?: boolean
           payout_percentage?: number
+          phone?: string | null
           pin_code?: string
+          popularity_score?: number
+          profile_photo_url?: string | null
+          ssn_token?: string | null
           stage_name?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      guest_visits: {
+        Row: {
+          created_at: string
+          door_fee: number
+          entry_time: string
+          guest_id: string
+          id: string
+          logged_by: string | null
+          shift_date: string
+        }
+        Insert: {
+          created_at?: string
+          door_fee?: number
+          entry_time?: string
+          guest_id: string
+          id?: string
+          logged_by?: string | null
+          shift_date?: string
+        }
+        Update: {
+          created_at?: string
+          door_fee?: number
+          entry_time?: string
+          guest_id?: string
+          id?: string
+          logged_by?: string | null
+          shift_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_visits_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guests: {
+        Row: {
+          created_at: string
+          dl_hash: string
+          first_visit_date: string
+          guest_display_id: string
+          id: string
+          is_returning: boolean
+          last_visit_date: string
+          visit_count: number
+        }
+        Insert: {
+          created_at?: string
+          dl_hash: string
+          first_visit_date?: string
+          guest_display_id: string
+          id?: string
+          is_returning?: boolean
+          last_visit_date?: string
+          visit_count?: number
+        }
+        Update: {
+          created_at?: string
+          dl_hash?: string
+          first_visit_date?: string
+          guest_display_id?: string
+          id?: string
+          is_returning?: boolean
+          last_visit_date?: string
+          visit_count?: number
         }
         Relationships: []
       }
@@ -171,6 +372,62 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      room_sessions: {
+        Row: {
+          created_at: string
+          dancer_cut: number
+          dancer_id: string
+          entry_time: string
+          exit_time: string | null
+          gross_amount: number
+          house_cut: number
+          id: string
+          logged_by: string | null
+          num_songs: number
+          package_name: string
+          room_name: string | null
+          shift_date: string
+        }
+        Insert: {
+          created_at?: string
+          dancer_cut: number
+          dancer_id: string
+          entry_time?: string
+          exit_time?: string | null
+          gross_amount: number
+          house_cut: number
+          id?: string
+          logged_by?: string | null
+          num_songs?: number
+          package_name: string
+          room_name?: string | null
+          shift_date?: string
+        }
+        Update: {
+          created_at?: string
+          dancer_cut?: number
+          dancer_id?: string
+          entry_time?: string
+          exit_time?: string | null
+          gross_amount?: number
+          house_cut?: number
+          id?: string
+          logged_by?: string | null
+          num_songs?: number
+          package_name?: string
+          room_name?: string | null
+          shift_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_sessions_dancer_id_fkey"
+            columns: ["dancer_id"]
+            isOneToOne: false
+            referencedRelation: "dancers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       transactions: {
         Row: {
@@ -242,6 +499,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_popularity_score: {
+        Args: { dancer_uuid: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -249,9 +510,26 @@ export type Database = {
         }
         Returns: boolean
       }
+      upsert_guest: {
+        Args: {
+          p_display_id: string
+          p_dl_hash: string
+          p_door_fee: number
+          p_logged_by: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "manager" | "door_staff" | "room_attendant"
+      dancer_event_type:
+        | "check_in"
+        | "room_session"
+        | "payout"
+        | "behaviour_note"
+        | "profile_edit"
+        | "shift_end"
+      dancer_live_status: "inactive" | "on_floor" | "active_in_room"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -380,6 +658,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "manager", "door_staff", "room_attendant"],
+      dancer_event_type: [
+        "check_in",
+        "room_session",
+        "payout",
+        "behaviour_note",
+        "profile_edit",
+        "shift_end",
+      ],
+      dancer_live_status: ["inactive", "on_floor", "active_in_room"],
     },
   },
 } as const

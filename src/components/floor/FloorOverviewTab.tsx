@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Users, User, Sofa, Flame, Clock, AlertTriangle } from "lucide-react";
+import { Users, User, Sofa, Flame, Clock, AlertTriangle, Loader2 } from "lucide-react";
 import { useCountUp } from "@/components/dashboard/useCountUp";
-import { roomStatusData, guestFlowData, generateLiveEvent } from "./floorMockData";
+import { useActiveRoomSessions, useActiveDancers, useGuestVisits, useCustomerEntries, today } from "@/hooks/useDashboardData";
 
 function formatTimer(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -11,68 +11,89 @@ function formatTimer(seconds: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-interface Props {
-  guestCount: number;
-}
+interface Props { guestCount: number }
 
 export default function FloorOverviewTab({ guestCount }: Props) {
-  const animGuests = useCountUp(guestCount, 1200, "floor-guests");
-  const animDancers = useCountUp(8, 1200);
-  const animRooms = useCountUp(2, 800);
+  const { data: activeSessions, isLoading: sessionsLoading } = useActiveRoomSessions();
+  const { data: activeDancers, isLoading: dancersLoading } = useActiveDancers();
+  const { data: guestVisits } = useGuestVisits(today(), today());
+  const { data: manualEntries } = useCustomerEntries(today(), today());
 
-  const [roomTimers, setRoomTimers] = useState(roomStatusData.map((r) => r.elapsed));
-  const [events, setEvents] = useState([
-    { time: "11:42 PM", text: "Room 3 — Overtime alert", isAlert: true },
-    { time: "11:40 PM", text: "Dancer #2 — Entered floor", isAlert: false },
-    { time: "11:38 PM", text: "Room 1 — Session started (Dancer #4)", isAlert: false },
-    { time: "11:35 PM", text: "Guest entered — Door", isAlert: false },
-    { time: "11:33 PM", text: "Room 2 — Session started (Dancer #7)", isAlert: false },
-    { time: "11:30 PM", text: "Dancer #7 — Entered floor", isAlert: false },
-    { time: "11:28 PM", text: "Guest entered — Door", isAlert: false },
-    { time: "11:25 PM", text: "Room 1 — Session ended (Dancer #4)", isAlert: false },
-    { time: "11:23 PM", text: "Room 3 — Session started (Dancer #9)", isAlert: false },
-    { time: "11:18 PM", text: "Guest entered — Door", isAlert: false },
-  ]);
+  const totalGuests = (guestVisits?.length ?? 0) + (manualEntries?.length ?? 0) || guestCount;
+  const onFloorDancers = (activeDancers ?? []).filter(d => d.live_status !== "inactive");
+  const inRoomDancers = (activeDancers ?? []).filter(d => d.live_status === "active_in_room");
+  const idleDancers = (activeDancers ?? []).filter(d => d.live_status === "on_floor");
+
+  const animGuests = useCountUp(totalGuests, 1200, "floor-guests");
+  const animDancers = useCountUp(onFloorDancers.length, 1200);
+  const animRooms = useCountUp(inRoomDancers.length, 800);
+
+  // Room timers: track elapsed seconds for active sessions
+  const [roomTimers, setRoomTimers] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!activeSessions) return;
+    const initial: Record<string, number> = {};
+    activeSessions.forEach((s) => {
+      initial[s.id] = Math.floor((Date.now() - new Date(s.entry_time).getTime()) / 1000);
+    });
+    setRoomTimers(initial);
+  }, [activeSessions]);
 
   useEffect(() => {
     const iv = setInterval(() => {
-      setRoomTimers((prev) =>
-        prev.map((t, i) =>
-          roomStatusData[i].status === "Active" || roomStatusData[i].status === "Overtime" ? t + 1 : t
-        )
-      );
+      setRoomTimers((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => { next[k] += 1; });
+        return next;
+      });
     }, 1000);
     return () => clearInterval(iv);
   }, []);
 
+  // Live event feed from real data
+  const [events, setEvents] = useState<{ time: string; text: string; isAlert: boolean }[]>([]);
   useEffect(() => {
-    const iv = setInterval(() => {
-      const ev = generateLiveEvent();
-      setEvents((prev) => [{ ...ev, isAlert: ev.text.includes("Overtime") }, ...prev.slice(0, 9)]);
-    }, 15000);
-    return () => clearInterval(iv);
-  }, []);
+    if (!activeSessions) return;
+    const feedEvents = activeSessions.map((s) => {
+      const dancer = (s.dancers as { stage_name: string } | null)?.stage_name ?? "Unknown";
+      const elapsed = Math.floor((Date.now() - new Date(s.entry_time).getTime()) / 60000);
+      const isAlert = elapsed > 15;
+      return {
+        time: new Date(s.entry_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        text: isAlert
+          ? `${s.room_name ?? "Room"} — Overtime alert (${dancer})`
+          : `${s.room_name ?? "Room"} — Active session (${dancer})`,
+        isAlert,
+      };
+    });
+    setEvents(feedEvents);
+  }, [activeSessions]);
+
+  // Guest flow chart (cumulative by hour from real data)
+  const guestFlowData = (() => {
+    const hours = ["8PM", "9PM", "10PM", "11PM", "12AM", "1AM", "2AM"];
+    const hourMap: Record<string, number> = { "8PM": 20, "9PM": 21, "10PM": 22, "11PM": 23, "12AM": 0, "1AM": 1, "2AM": 2 };
+    const allEntries = [...(guestVisits ?? []), ...(manualEntries ?? [])];
+    let cumulative = 0;
+    return hours.map((h) => {
+      const count = allEntries.filter(g => new Date(g.entry_time).getHours() === hourMap[h]).length;
+      cumulative += count;
+      return { time: h, guests: cumulative };
+    });
+  })();
 
   const statusColor: Record<string, string> = {
     Active: "border-primary/50 bg-primary/10",
     Overtime: "border-destructive/50 bg-destructive/10 animate-pulse",
     Open: "border-success/50 bg-success/10",
-    Cleaning: "border-muted-foreground/30 bg-muted/40",
   };
-
   const statusDot: Record<string, string> = {
-    Active: "bg-primary",
-    Overtime: "bg-destructive",
-    Open: "bg-success",
-    Cleaning: "bg-muted-foreground",
+    Active: "bg-primary", Overtime: "bg-destructive", Open: "bg-success",
   };
 
-  const statusLabel: Record<string, { text: string; cls: string }> = {
-    Active: { text: "Active", cls: "text-primary" },
-    Overtime: { text: "Overtime", cls: "text-destructive" },
-    Open: { text: "Open", cls: "text-success" },
-    Cleaning: { text: "Cleaning", cls: "text-muted-foreground" },
-  };
+  if (sessionsLoading || dancersLoading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -80,8 +101,8 @@ export default function FloorOverviewTab({ guestCount }: Props) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { Icon: Users, label: "On Floor", value: animGuests, unit: "Guests", dot: "bg-success", sub: "Live" },
-          { Icon: User, label: "Dancers", value: animDancers, unit: "Active", dot: "bg-primary", sub: "3 Idle" },
-          { Icon: Sofa, label: "Rooms", value: animRooms, unit: "Occupied", dot: "bg-warning", sub: "2 Available" },
+          { Icon: User, label: "Dancers", value: animDancers, unit: "Active", dot: "bg-primary", sub: `${idleDancers.length} Idle` },
+          { Icon: Sofa, label: "Rooms", value: animRooms, unit: "Occupied", dot: "bg-warning", sub: `${(activeSessions ?? []).length} Active` },
           { Icon: Flame, label: "Peak Hour", value: null, unit: null, dot: "bg-destructive", sub: "Now" },
         ].map((c, i) => (
           <div key={i} className="glass-card p-5">
@@ -103,24 +124,31 @@ export default function FloorOverviewTab({ guestCount }: Props) {
       {/* Room Status Strip */}
       <div className="glass-card p-6">
         <h2 className="font-heading text-2xl tracking-wide mb-4">Room Status</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {roomStatusData.map((r, i) => (
-            <div key={r.id} className={`rounded-xl border p-4 ${statusColor[r.status]}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-heading text-lg">Room {r.id}</span>
-                <span className={`w-2.5 h-2.5 rounded-full ${statusDot[r.status]}`} />
-              </div>
-              <p className={`text-xs font-medium mb-1 ${statusLabel[r.status].cls}`}>{statusLabel[r.status].text}</p>
-              {r.dancer && <p className="text-xs text-muted-foreground">Dancer {r.dancer}</p>}
-              {(r.status === "Active" || r.status === "Overtime") && (
-                <p className={`text-sm font-mono mt-1 flex items-center gap-1 ${r.status === "Overtime" ? "text-destructive" : "text-foreground"}`}>
-                  {formatTimer(roomTimers[i])} <Clock className="w-3 h-3" />
-                </p>
-              )}
-              {r.status === "Cleaning" && <p className="text-xs text-muted-foreground">~10 min</p>}
-            </div>
-          ))}
-        </div>
+        {(activeSessions ?? []).length === 0 ? (
+          <p className="text-muted-foreground text-sm py-4 text-center">No active room sessions.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {(activeSessions ?? []).map((s) => {
+              const elapsed = roomTimers[s.id] ?? 0;
+              const isOvertime = elapsed > 15 * 60;
+              const status = isOvertime ? "Overtime" : "Active";
+              const dancer = (s.dancers as { stage_name: string } | null)?.stage_name ?? "—";
+              return (
+                <div key={s.id} className={`rounded-xl border p-4 ${statusColor[status]}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-heading text-lg">{s.room_name ?? "Room"}</span>
+                    <span className={`w-2.5 h-2.5 rounded-full ${statusDot[status]}`} />
+                  </div>
+                  <p className={`text-xs font-medium mb-1 ${isOvertime ? "text-destructive" : "text-primary"}`}>{status}</p>
+                  <p className="text-xs text-muted-foreground">{dancer}</p>
+                  <p className={`text-sm font-mono mt-1 flex items-center gap-1 ${isOvertime ? "text-destructive" : "text-foreground"}`}>
+                    {formatTimer(elapsed)} <Clock className="w-3 h-3" />
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Guest Flow Chart + Live Feed */}
@@ -141,7 +169,7 @@ export default function FloorOverviewTab({ guestCount }: Props) {
                 <Tooltip
                   contentStyle={{ background: "hsl(240,15%,8%)", border: "1px solid hsl(240,12%,16%)", borderRadius: 8 }}
                   labelStyle={{ color: "hsl(46,92%,53%)" }}
-                  formatter={(v: number) => [`${v} guests`, "On Floor"]}
+                  formatter={(v: number) => [`${v} guests`, "Cumulative"]}
                 />
                 <Area type="monotone" dataKey="guests" stroke="hsl(46,92%,53%)" fill="url(#guestGrad)" strokeWidth={2} />
               </AreaChart>
@@ -155,9 +183,11 @@ export default function FloorOverviewTab({ guestCount }: Props) {
             <h2 className="font-heading text-2xl tracking-wide">Live Floor Activity</h2>
           </div>
           <div className="space-y-2.5 max-h-[280px] overflow-y-auto">
-            {events.map((e, i) => (
+            {events.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">No active sessions.</p>
+            ) : events.map((e, i) => (
               <div
-                key={`${e.time}-${i}`}
+                key={i}
                 className={`text-sm border-l-2 pl-3 py-1 transition-all ${
                   i === 0 ? "animate-fade-in border-primary" : "border-border"
                 } ${e.isAlert ? "text-warning" : ""}`}

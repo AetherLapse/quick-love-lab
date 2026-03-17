@@ -1,176 +1,154 @@
 import { useState } from "react";
-import { X, DollarSign, Home, Users, User, Settings, ShieldCheck, AlertTriangle, Check } from "lucide-react";
+import { X, Home, Users, User, Settings, ShieldCheck, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { periodData, staffMembers, dancerSessions } from "./mockData";
-import { Slider } from "@/components/ui/slider";
-
-const dancers = periodData.today.dancers!;
-
-function EditableField({ label, value, prefix = "" }: { label: string; value: string | number; prefix?: string }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(String(value));
-
-  const handleSave = () => {
-    setEditing(false);
-    toast.success(`${label} updated to ${prefix}${val}`);
-  };
-
-  return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-muted-foreground text-sm">{label}</span>
-      <div className="flex items-center gap-2">
-        {editing ? (
-          <>
-            <input
-              type="text"
-              value={val}
-              onChange={e => setVal(e.target.value)}
-              className="w-20 px-2 py-1 text-sm rounded-lg bg-background border border-border text-foreground text-right"
-              autoFocus
-            />
-            <button onClick={handleSave} className="px-2 py-1 rounded-lg text-xs bg-primary text-primary-foreground">Save</button>
-            <button onClick={() => { setEditing(false); setVal(String(value)); }} className="px-2 py-1 rounded-lg text-xs border border-border text-muted-foreground">Cancel</button>
-          </>
-        ) : (
-          <>
-            <span className="text-foreground font-medium text-sm">{prefix}{val}</span>
-            <button onClick={() => setEditing(true)} className="px-2 py-1 rounded-lg text-xs border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">Edit</button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+import { useProfiles, useDancers, useClubSettings } from "@/hooks/useDashboardData";
 
 export function SettingsTab() {
-  const [housePct, setHousePct] = useState(70);
   const [drawerDancer, setDrawerDancer] = useState<string | null>(null);
+  const { data: profiles, isLoading: profilesLoading } = useProfiles();
+  const { data: dancers, isLoading: dancersLoading } = useDancers();
+  const { data: settings, isLoading: settingsLoading } = useClubSettings();
 
-  const selectedDancer = drawerDancer ? dancers.find(d => d.name === drawerDancer) : null;
+  const staffMembers = (profiles ?? []).flatMap((p) => {
+    const roles = (p.user_roles as { role: string }[] | null) ?? [];
+    return roles
+      .filter((r) => r.role !== "admin")
+      .map((r) => ({ name: p.full_name, role: r.role, active: p.is_active }));
+  });
+
+  const selectedDancer = drawerDancer ? (dancers ?? []).find((d) => d.id === drawerDancer) : null;
 
   return (
     <div className="relative">
       <h2 className="font-heading text-3xl tracking-wide mb-6">Club Settings</h2>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Section 1 — Split Config */}
-        <div className="glass-card p-6">
-          <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-primary" /> Revenue Split Settings
-          </h3>
-          <div className="space-y-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">House Cut</span>
-              <span className="text-primary font-heading text-lg">{housePct}%</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Dancer Cut</span>
-              <span className="text-foreground font-heading text-lg">{100 - housePct}%</span>
-            </div>
-            <Slider
-              value={[housePct]}
-              onValueChange={([v]) => setHousePct(v)}
-              min={50}
-              max={90}
-              step={5}
-              className="my-4"
-            />
-            <div className="flex rounded-lg overflow-hidden h-4">
-              <div className="bg-primary transition-all" style={{ width: `${housePct}%` }} />
-              <div className="bg-muted-foreground/30 transition-all" style={{ width: `${100 - housePct}%` }} />
-            </div>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" /> Changes apply to all future sessions. Past sessions unaffected.
-            </p>
-          </div>
-        </div>
-
-        {/* Section 2 — Fee Config */}
-        <div className="glass-card p-6">
-          <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
-            <Home className="w-5 h-5 text-primary" /> House Fee Settings
-          </h3>
-          <div className="space-y-1">
-            <EditableField label="Dancer Daily House Fee" value={50} prefix="$" />
-            <EditableField label="Customer Door Fee" value={20} prefix="$" />
-            <div className="border-t border-border/50 mt-3 pt-3">
-              <p className="text-muted-foreground text-xs mb-2">Package Pricing</p>
-              <EditableField label="1 Song" value={50} prefix="$" />
-              <EditableField label="2 Songs" value={100} prefix="$" />
-              <EditableField label="3 Songs" value={150} prefix="$" />
-            </div>
-          </div>
+      {/* Fee/Cost settings moved to /dev-dashboard notice */}
+      <div className="glass-card p-5 mb-8 border border-primary/20 flex items-start gap-3">
+        <Lock className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-foreground font-medium text-sm">Fee & Revenue Split Settings</p>
+          <p className="text-muted-foreground text-xs mt-0.5">
+            Revenue split percentages, house fees, and song pricing are managed by the platform administrator. Contact your administrator to request changes.
+          </p>
         </div>
       </div>
 
+      {/* Current Settings (read-only) */}
+      {settingsLoading ? (
+        <div className="glass-card p-6 mb-8 flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+      ) : settings && (
+        <div className="glass-card p-6 mb-8">
+          <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
+            <Home className="w-5 h-5 text-primary" /> Current Fee Schedule
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "Song Price", value: `$${settings.song_price}` },
+              { label: "Door Fee", value: `$${settings.default_door_fee}` },
+              { label: "Dancer House Fee", value: `$${settings.default_dancer_entrance_fee}` },
+              { label: "Dancer Payout %", value: `${settings.default_dancer_payout_pct}%` },
+            ].map(({ label, value }) => (
+              <div key={label} className="bg-secondary/30 rounded-xl p-4 text-center">
+                <p className="text-muted-foreground text-xs mb-1">{label}</p>
+                <p className="font-heading text-2xl text-primary">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Section 3 — Role Management */}
+        {/* Staff Accounts */}
         <div className="glass-card p-6">
           <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-primary" /> Staff Accounts
           </h3>
-          <div className="space-y-3">
-            {staffMembers.map((s, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-border/30">
-                <div>
-                  <span className="text-foreground text-sm font-medium">{s.name}</span>
-                  <span className="text-muted-foreground text-xs ml-3">{s.role}</span>
+          {profilesLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          ) : staffMembers.length === 0 ? (
+            <p className="text-muted-foreground text-sm py-4 text-center">No staff members found.</p>
+          ) : (
+            <div className="space-y-3">
+              {staffMembers.map((s, i) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-border/30">
+                  <div>
+                    <span className="text-foreground text-sm font-medium">{s.name}</span>
+                    <span className="text-muted-foreground text-xs ml-3 capitalize">{s.role.replace("_", " ")}</span>
+                  </div>
+                  <span className={`text-xs font-medium flex items-center gap-1 ${s.active ? "text-success" : "text-destructive"}`}>
+                    <span className={`w-2 h-2 rounded-full ${s.active ? "bg-success" : "bg-destructive"}`} />
+                    {s.active ? "Active" : "Inactive"}
+                  </span>
                 </div>
-                <span className={`text-xs font-medium flex items-center gap-1 ${s.active ? "text-success" : "text-destructive"}`}>
-                  <span className={`w-2 h-2 rounded-full ${s.active ? "bg-success" : "bg-destructive"}`} />
-                  {s.active ? "Active" : "Inactive"}
-                </span>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => toast.success("Demo mode — staff management coming soon")} className="mt-4 w-full px-4 py-2.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => toast.info("Staff management coming in a future update.")}
+            className="mt-4 w-full px-4 py-2.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+          >
             + Add Staff Member
           </button>
         </div>
 
-        {/* Section 4 — Performer Roster */}
+        {/* Performer Profiles */}
         <div className="glass-card p-6">
           <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
             <User className="w-5 h-5 text-primary" /> Performer Profiles
           </h3>
-          <div className="space-y-3">
-            {dancers.map((d, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-border/30">
-                <div className="flex items-center gap-2">
-                  <span className="text-foreground text-sm font-medium">{d.name}</span>
-                  <span className={`text-xs flex items-center gap-1 ${d.active ? "text-success" : "text-muted-foreground"}`}>
-                    <span className={`w-2 h-2 rounded-full ${d.active ? "bg-success" : "bg-muted-foreground"}`} />
-                    {d.active ? "Active" : "Inactive"}
-                  </span>
+          {dancersLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          ) : (dancers ?? []).length === 0 ? (
+            <p className="text-muted-foreground text-sm py-4 text-center">No performers on file yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {(dancers ?? []).map((d) => (
+                <div key={d.id} className="flex items-center justify-between py-2 border-b border-border/30">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground text-sm font-medium">{d.stage_name}</span>
+                    <span className={`text-xs flex items-center gap-1 ${d.is_active ? "text-success" : "text-muted-foreground"}`}>
+                      <span className={`w-2 h-2 rounded-full ${d.is_active ? "bg-success" : "bg-muted-foreground"}`} />
+                      {d.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setDrawerDancer(d.id)}
+                    className="px-3 py-1 rounded-lg text-xs border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                  >
+                    View
+                  </button>
                 </div>
-                <button
-                  onClick={() => setDrawerDancer(d.name)}
-                  className="px-3 py-1 rounded-lg text-xs border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
-                >
-                  View
-                </button>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => toast.success("Demo mode — performer management coming soon")} className="mt-4 w-full px-4 py-2.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => toast.info("Performer onboarding coming in a future update.")}
+            className="mt-4 w-full px-4 py-2.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+          >
             + Add Performer
           </button>
         </div>
       </div>
 
-      {/* Section 5 — System Info */}
+      {/* System Info */}
       <div className="glass-card p-6 mb-8">
         <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
           <Settings className="w-5 h-5 text-primary" /> System
         </h3>
         <div className="space-y-2 text-sm">
           {[
-            ["App Version", "2nyt v1.0 MVP"],
-            ["Database", "Lovable Cloud"],
+            ["App Version", "2NYT v2.0"],
+            ["Database", "Supabase (External)"],
             ["Face Recognition", "AWS Rekognition"],
             ["Encryption", "AES-256 + TLS 1.3"],
-            ["Data Retention", "Hashed IDs only"],
-            ["Last Backup", "Today, 6:00 PM"],
+            ["Data Retention", "Hashed IDs only (customers)"],
+            ["Last Backup", "Managed by Supabase"],
           ].map(([label, value], i) => (
             <div key={i} className="flex justify-between py-1 border-b border-border/20">
               <span className="text-muted-foreground">{label}</span>
@@ -187,23 +165,25 @@ export function SettingsTab() {
           <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-card border-l border-border z-50 overflow-y-auto animate-slide-in-right">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-heading text-3xl tracking-wide">{selectedDancer.name}</h3>
+                <h3 className="font-heading text-3xl tracking-wide">{selectedDancer.stage_name}</h3>
                 <button onClick={() => setDrawerDancer(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Dancer ID</span><span className="text-foreground">{selectedDancer.name.split(" ")[1]}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="text-foreground">{selectedDancer.employee_id}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">PIN</span><span className="text-foreground">••••</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Payout %</span><span className="text-foreground">30%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Payout %</span><span className="text-foreground">{selectedDancer.payout_percentage}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">House Fee</span><span className="text-foreground">${selectedDancer.entrance_fee}</span></div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Facial Hash</span>
-                  <span className="text-success flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Face Enrolled
+                  <span className={selectedDancer.facial_hash ? "text-success flex items-center gap-1" : "text-muted-foreground"}>
+                    {selectedDancer.facial_hash ? (<><ShieldCheck className="w-3.5 h-3.5" /> Enrolled</>) : "Not enrolled"}
                   </span>
                 </div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Total Sessions (All-Time)</span><span className="text-foreground">{selectedDancer.sessions * 12}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Total Earned (All-Time)</span><span className="text-primary">${(selectedDancer.gross * 12).toLocaleString()}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Live Status</span><span className="text-foreground capitalize">{(selectedDancer.live_status as string).replace("_", " ")}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Popularity Score</span><span className="text-primary">{selectedDancer.popularity_score}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Onboarding</span><span className={selectedDancer.onboarding_complete ? "text-success" : "text-warning"}>{selectedDancer.onboarding_complete ? "Complete" : "Incomplete"}</span></div>
               </div>
             </div>
           </div>

@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { X, Home, Users, User, Settings, ShieldCheck, Lock, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Home, Users, User, Settings, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useProfiles, useDancers, useClubSettings } from "@/hooks/useDashboardData";
 
 export function SettingsTab() {
-  const [drawerDancer, setDrawerDancer] = useState<string | null>(null);
+  const navigate = useNavigate();
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
   const { data: dancers, isLoading: dancersLoading } = useDancers();
   const { data: settings, isLoading: settingsLoading } = useClubSettings();
@@ -15,8 +15,6 @@ export function SettingsTab() {
       .filter((r) => r.role !== "admin")
       .map((r) => ({ name: p.full_name, role: r.role, active: p.is_active }));
   });
-
-  const selectedDancer = drawerDancer ? (dancers ?? []).find((d) => d.id === drawerDancer) : null;
 
   return (
     <div className="relative">
@@ -118,7 +116,7 @@ export function SettingsTab() {
                     </span>
                   </div>
                   <button
-                    onClick={() => setDrawerDancer(d.id)}
+                    onClick={() => navigate("/dancers")}
                     className="px-3 py-1 rounded-lg text-xs border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
                   >
                     View
@@ -128,7 +126,7 @@ export function SettingsTab() {
             </div>
           )}
           <button
-            onClick={() => toast.info("Performer onboarding coming in a future update.")}
+            onClick={() => navigate("/dancers")}
             className="mt-4 w-full px-4 py-2.5 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
           >
             + Add Performer
@@ -158,37 +156,6 @@ export function SettingsTab() {
         </div>
       </div>
 
-      {/* Performer Detail Drawer */}
-      {drawerDancer && selectedDancer && (
-        <>
-          <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40" onClick={() => setDrawerDancer(null)} />
-          <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-card border-l border-border z-50 overflow-y-auto animate-slide-in-right">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-heading text-3xl tracking-wide">{selectedDancer.stage_name}</h3>
-                <button onClick={() => setDrawerDancer(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="text-foreground">{selectedDancer.employee_id}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">PIN</span><span className="text-foreground">••••</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Payout %</span><span className="text-foreground">{selectedDancer.payout_percentage}%</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">House Fee</span><span className="text-foreground">${selectedDancer.entrance_fee}</span></div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Facial Hash</span>
-                  <span className={selectedDancer.facial_hash ? "text-success flex items-center gap-1" : "text-muted-foreground"}>
-                    {selectedDancer.facial_hash ? (<><ShieldCheck className="w-3.5 h-3.5" /> Enrolled</>) : "Not enrolled"}
-                  </span>
-                </div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Live Status</span><span className="text-foreground capitalize">{(selectedDancer.live_status as string).replace("_", " ")}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Popularity Score</span><span className="text-primary">{selectedDancer.popularity_score}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Onboarding</span><span className={selectedDancer.onboarding_complete ? "text-success" : "text-warning"}>{selectedDancer.onboarding_complete ? "Complete" : "Incomplete"}</span></div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

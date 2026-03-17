@@ -8,6 +8,8 @@ import Dashboard from "./pages/Dashboard";
 import DoorCheckIn from "./pages/DoorCheckIn";
 import PrivateRooms from "./pages/PrivateRooms";
 import FloorView from "./pages/FloorView";
+import DancerManagement from "./pages/DancerManagement";
+import ClubSettings from "./pages/ClubSettings";
 import NotFound from "./pages/NotFound";
 import DemoLogin from "./components/DemoLogin";
 
@@ -25,6 +27,8 @@ const App = () => (
           <Route path="/rooms" element={<PrivateRooms />} />
           <Route path="/dashboard" element={<DemoLogin role="admin"><Dashboard /></DemoLogin>} />
           <Route path="/floor" element={<DemoLogin role="manager"><FloorView /></DemoLogin>} />
+          <Route path="/dancers" element={<DemoLogin role="admin"><DancerManagement /></DemoLogin>} />
+          <Route path="/settings" element={<DemoLogin role="admin"><ClubSettings /></DemoLogin>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

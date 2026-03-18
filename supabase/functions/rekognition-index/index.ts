@@ -64,8 +64,7 @@ serve(async (req) => {
       });
     }
 
-    // Index the face
-    const imageBytes = Uint8Array.from(atob(image_base64), (c) => c.charCodeAt(0));
+    // Index the face — Bytes must be a base64 string in the JSON protocol
     const indexResp = await aws.fetch(endpoint, {
       method: "POST",
       headers: {
@@ -74,7 +73,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         CollectionId: collectionId,
-        Image: { Bytes: Array.from(imageBytes) },
+        Image: { Bytes: image_base64 },
         ExternalImageId: dancer_id,
         MaxFaces: 1,
         QualityFilter: "AUTO",

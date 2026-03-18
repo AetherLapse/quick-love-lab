@@ -142,12 +142,16 @@ export function useProfiles() {
   return useQuery({
     queryKey: ["profiles"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*, user_roles(role)")
-        .eq("is_active", true);
-      if (error) throw error;
-      return data ?? [];
+      const [profilesRes, rolesRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("is_active", true),
+        supabase.from("user_roles").select("user_id, role"),
+      ]);
+      if (profilesRes.error) throw profilesRes.error;
+      const roles = rolesRes.data ?? [];
+      return (profilesRes.data ?? []).map((p) => ({
+        ...p,
+        user_roles: roles.filter((r) => r.user_id === p.user_id),
+      }));
     },
   });
 }

@@ -371,8 +371,8 @@ export default function DancerManagement() {
   };
 
   const handleSave = async () => {
-    if (!form.stage_name || !form.employee_id || !form.pin_code) {
-      toast.error("Stage name, employee ID, and PIN are required.");
+    if (!form.stage_name || !form.employee_id || !form.pin_code || !form.email || !form.phone) {
+      toast.error("Stage name, employee ID, PIN, email, and phone are required.");
       return;
     }
     setSaving(true);
@@ -383,8 +383,8 @@ export default function DancerManagement() {
       payout_percentage: parseFloat(form.payout_percentage),
       entrance_fee: parseFloat(form.entrance_fee),
       full_name: form.full_name.trim() || null,
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
+      email: form.email.trim(),
+      phone: form.phone.trim(),
     };
 
     const { error } = editId
@@ -499,7 +499,7 @@ export default function DancerManagement() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-foreground">Email</Label>
+                      <Label className="text-foreground">Email <span className="text-destructive">*</span></Label>
                       <Input
                         type="email"
                         value={form.email}
@@ -508,7 +508,7 @@ export default function DancerManagement() {
                       />
                     </div>
                     <div>
-                      <Label className="text-foreground">Phone</Label>
+                      <Label className="text-foreground">Phone <span className="text-destructive">*</span></Label>
                       <Input
                         value={form.phone}
                         onChange={(e) => setForm({ ...form, phone: e.target.value })}

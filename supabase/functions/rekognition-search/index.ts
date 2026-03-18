@@ -34,8 +34,6 @@ serve(async (req) => {
       service: "rekognition",
     });
 
-    const imageBytes = Uint8Array.from(atob(image_base64), (c) => c.charCodeAt(0));
-
     const searchResp = await aws.fetch(endpoint, {
       method: "POST",
       headers: {
@@ -44,7 +42,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         CollectionId: collectionId,
-        Image: { Bytes: Array.from(imageBytes) },
+        Image: { Bytes: image_base64 },
         MaxFaces: 1,
         FaceMatchThreshold: MIN_CONFIDENCE,
       }),

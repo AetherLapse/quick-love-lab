@@ -53,6 +53,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const mountedRef = useRef(true);
 
   const [step, setStep] = useState<ScanStep>("idle");
   const [processProgress, setProcessProgress] = useState(0);
@@ -65,12 +66,15 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    codeReaderRef.current?.reset();
+    try {
+      codeReaderRef.current?.reset();
+    } catch { /* ignore cleanup errors */ }
     codeReaderRef.current = null;
   }, []);
 
   const processBarcode = useCallback(
     async (text: string) => {
+      if (!mountedRef.current) return;
       setProcessLabel("Parsing license data...");
       setProcessProgress(50);
 
@@ -78,10 +82,10 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       const identifier = dlNumber ?? text;
       const hash = await sha256hex(identifier);
 
+      if (!mountedRef.current) return;
       setProcessLabel("Hashing identity...");
       setProcessProgress(80);
 
-      // Age check — only if DOB was parsed; if can't parse, allow through (staff judgment)
       const denied = dobMMDDYYYY ? !isOver21(dobMMDDYYYY) : false;
 
       setProcessProgress(100);
@@ -101,6 +105,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       }
 
       setTimeout(() => {
+        if (!mountedRef.current) return;
         setStep("idle");
         setResult(null);
       }, 5000);
@@ -116,9 +121,11 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       reader
         .decodeFromVideoElement(videoEl)
         .then((result) => {
+          if (!mountedRef.current) return;
           stopCamera();
           setStep("flash");
           setTimeout(() => {
+            if (!mountedRef.current) return;
             setStep("processing");
             setProcessProgress(20);
             setProcessLabel("Reading barcode...");
@@ -186,7 +193,11 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   }, [stopCamera, processBarcode]);
 
   useEffect(() => {
-    return () => stopCamera();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopCamera();
+    };
   }, [stopCamera]);
 
   // IDLE

@@ -41,6 +41,7 @@ export function useRoomSessions(start: string, end: string) {
       if (error) throw error;
       return data ?? [];
     },
+    refetchInterval: 30000,
   });
 }
 
@@ -73,6 +74,7 @@ export function useGuestVisits(start: string, end: string) {
       if (error) throw error;
       return data ?? [];
     },
+    refetchInterval: 30000,
   });
 }
 
@@ -89,6 +91,7 @@ export function useCustomerEntries(start: string, end: string) {
       if (error) throw error;
       return data ?? [];
     },
+    refetchInterval: 30000,
   });
 }
 
@@ -105,6 +108,7 @@ export function useAttendanceLogs(start: string, end: string) {
       if (error) throw error;
       return data ?? [];
     },
+    refetchInterval: 30000,
   });
 }
 

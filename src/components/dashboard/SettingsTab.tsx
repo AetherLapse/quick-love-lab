@@ -498,28 +498,6 @@ export function SettingsTab() {
         </div>
       </div>
 
-      {/* System Info */}
-      <div className="glass-card p-6 mb-8">
-        <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
-          <Settings className="w-5 h-5 text-primary" /> System
-        </h3>
-        <div className="space-y-2 text-sm">
-          {[
-            ["App Version", "2NYT v2.0"],
-            ["Database", "Supabase (External)"],
-            ["Face Recognition", "AWS Rekognition"],
-            ["Encryption", "AES-256 + TLS 1.3"],
-            ["Data Retention", "Hashed IDs only (customers)"],
-            ["Last Backup", "Managed by Supabase"],
-          ].map(([label, value], i) => (
-            <div key={i} className="flex justify-between py-1 border-b border-border/20">
-              <span className="text-muted-foreground">{label}</span>
-              <span className="text-foreground font-medium">{value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Add / Edit Performer Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditId(null); }}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">

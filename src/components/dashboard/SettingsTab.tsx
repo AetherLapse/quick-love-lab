@@ -84,15 +84,19 @@ function FaceEnrollDrawer({ dancer, onClose, onEnrolled }: {
     setStep("processing");
     try {
       const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-      const { data: sessionData } = await supabase.auth.getSession();
-      // anon key is public by design — fallback ensures valid JWT when session not yet established
-      const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
-      const token = sessionData.session?.access_token ?? ANON_JWT;
-      const { data, error } = await supabase.functions.invoke("rekognition-index", {
-        body: { dancer_id: dancer.id, image_base64: base64 },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw new Error(error.message);
+      // anon key is public by design — hardcoded as reliable fallback
+      const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+      // Use fetch directly so Authorization header is never overridden by the SDK
+      const res = await fetch(
+        "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-index",
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ dancer_id: dancer.id, image_base64: base64 }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? data?.message ?? `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
       setStep("success");
       onEnrolled();

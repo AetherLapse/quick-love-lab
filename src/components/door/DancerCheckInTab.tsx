@@ -98,11 +98,19 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
       const base64 = dataUrl.split(",")[1];
 
-      const { data, error } = await supabase.functions.invoke("rekognition-search", {
-        body: { image_base64: base64 },
-      });
-
-      if (error) throw error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+      const token = sessionData.session?.access_token ?? ANON_JWT;
+      const res = await fetch(
+        "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-search",
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: base64 }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
 
       if (data.matched) {
         await performCheckIn(data.dancer_id, data.stage_name, Number(data.entrance_fee), "facial");

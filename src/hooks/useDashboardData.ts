@@ -147,7 +147,7 @@ export function useProfiles() {
     queryKey: ["profiles"],
     queryFn: async () => {
       const [profilesRes, rolesRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("is_active", true),
+        supabase.from("profiles").select("*"),
         supabase.from("user_roles").select("user_id, role"),
       ]);
       if (profilesRes.error) throw profilesRes.error;

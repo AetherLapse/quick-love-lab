@@ -1,237 +1,404 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TopBar } from "@/components/TopBar";
-import { Plus, Video, AlertTriangle } from "lucide-react";
+import { Plus, AlertTriangle, Video, X, Loader2, Camera, User } from "lucide-react";
+import { useActiveRoomSessions, useActiveDancers, useClubSettings, useRoomSessions, today } from "@/hooks/useDashboardData";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-interface Room {
-  id: number;
-  status: "active" | "available" | "attention" | "cleaning";
-  dancer?: string;
-  customer?: string;
-  package?: string;
-  price?: number;
-  startTime?: number;
-  split?: { house: number; dancer: number };
+const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+
+// Default layout — will be configurable from /dev-dashboard in future
+const ROOM_LAYOUT = [
+  { floor: "Floor 1", rooms: ["Room 1", "Room 2", "Room 3"] },
+  { floor: "Floor 2", rooms: ["Room 1", "Room 2", "Room 3"] },
+];
+
+function buildRoomName(floor: string, room: string) {
+  return `${floor} - ${room}`;
 }
-
-const initialRooms: Room[] = [
-  { id: 1, status: "active", dancer: "Jade #4", customer: "#8f4b2a9c…", package: "3 Songs", price: 150, startTime: Date.now() - 512000, split: { house: 105, dancer: 45 } },
-  { id: 2, status: "active", dancer: "Sky #7", customer: "#3d91cc2a…", package: "2 Songs", price: 100, startTime: Date.now() - 194000, split: { house: 70, dancer: 30 } },
-  { id: 3, status: "attention", dancer: "Angel #9", customer: "#c2d1e4f5…", package: "1 Song", price: 50, startTime: Date.now() - 1065000, split: { house: 35, dancer: 15 } },
-  { id: 4, status: "available" },
-  { id: 5, status: "available" },
-  { id: 6, status: "cleaning" },
-];
-
-const mockDancers = ["Jade #4", "Nova #2", "Sky #7", "Luna #1", "Star #5", "Angel #9", "Storm #6", "Raven #3"];
-const packages = [
-  { label: "1 Song", price: 50, house: 35, dancer: 15 },
-  { label: "2 Songs", price: 100, house: 70, dancer: 30 },
-  { label: "3 Songs", price: 150, house: 105, dancer: 45 },
-];
 
 function formatTimer(ms: number) {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-const statusStyles: Record<string, string> = {
-  active: "border-primary/60 glow-gold",
-  available: "border-success/20",
-  attention: "border-warning/60",
-  cleaning: "border-muted-foreground/20 opacity-60",
-};
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
 export default function PrivateRooms() {
-  const [rooms, setRooms] = useState(initialRooms);
   const [now, setNow] = useState(Date.now());
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState(1);
-  const [selectedDancer, setSelectedDancer] = useState<string | null>(null);
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
-  const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
-  const [dancerScanState, setDancerScanState] = useState<"idle" | "scanning" | "done">("idle");
+  const [selectedDancerId, setSelectedDancerId] = useState<string | null>(null);
+  const [selectedDancerName, setSelectedDancerName] = useState<string | null>(null);
+  const [selectedPkg, setSelectedPkg] = useState<number | null>(null);
+  const [roomFloor, setRoomFloor] = useState("");
+  const [roomName, setRoomName] = useState("");
   const [pinInput, setPinInput] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+  const [customSongs, setCustomSongs] = useState(1);
+  const [faceScanStep, setFaceScanStep] = useState<"idle" | "camera" | "scanning" | "done" | "error">("idle");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+
+  const { data: activeSessions = [] } = useActiveRoomSessions();
+  const { data: dancers = [] } = useActiveDancers();
+  const { data: settings } = useClubSettings();
+  const { data: todaySessions = [] } = useRoomSessions(today(), today());
+  const qc = useQueryClient();
+
+  // Packages derived from settings
+  const songPrice = Number(settings?.song_price ?? 50);
+  const dancerPct = Number(settings?.default_dancer_payout_pct ?? 30) / 100;
+  const packages = [1, 2, 3].map((songs) => {
+    const gross = songs * songPrice;
+    const dancer = Math.round(gross * dancerPct);
+    return { songs, label: `${songs} Song${songs > 1 ? "s" : ""}`, price: gross, house: gross - dancer, dancer };
+  });
+
+  // Active package — index 0-2 = preset, 3 = custom
+  const getActivePkg = () => {
+    if (selectedPkg === null) return null;
+    if (selectedPkg < packages.length) return packages[selectedPkg];
+    const songs = Math.max(1, customSongs);
+    const gross = songs * songPrice;
+    const dancer = Math.round(gross * dancerPct);
+    return { songs, label: `${songs} Song${songs !== 1 ? "s" : ""} (Custom)`, price: gross, house: gross - dancer, dancer };
+  };
+
+  // Map active sessions by room_name for O(1) lookup
+  const sessionByRoom = Object.fromEntries(
+    activeSessions.map((s) => [s.room_name ?? "", s])
+  );
+
+  // Session history (completed today)
+  const completedSessions = todaySessions.filter((s) => s.exit_time);
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
   }, []);
 
-  const activeCount = rooms.filter(r => r.status === "active").length;
-  const availableCount = rooms.filter(r => r.status === "available").length;
-  const attentionCount = rooms.filter(r => r.status === "attention").length;
-  const cleaningCount = rooms.filter(r => r.status === "cleaning").length;
-  const availableRooms = rooms.filter(r => r.status === "available");
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; stopFaceCamera(); };
+  }, []);
 
-  const openModal = () => {
+  // ── Mutations ──────────────────────────────────────────────────────────────
+
+  const startSession = useMutation({
+    mutationFn: async () => {
+      if (!selectedDancerId || selectedPkg === null || !roomName.trim()) throw new Error("Missing selection");
+      const pkg = getActivePkg();
+      if (!pkg) throw new Error("Missing selection");
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("room_sessions").insert({
+        dancer_id: selectedDancerId,
+        room_name: buildRoomName(roomFloor, roomName),
+        entry_time: new Date().toISOString(),
+        shift_date: today(),
+        package_name: pkg.label,
+        num_songs: pkg.songs,
+        gross_amount: pkg.price,
+        house_cut: pkg.house,
+        dancer_cut: pkg.dancer,
+        logged_by: user?.id,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room_sessions_active"] });
+      qc.invalidateQueries({ queryKey: ["room_sessions"] });
+      toast.success("Session started");
+      closeModal();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const endSession = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const { error } = await supabase
+        .from("room_sessions")
+        .update({ exit_time: new Date().toISOString() })
+        .eq("id", sessionId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room_sessions_active"] });
+      qc.invalidateQueries({ queryKey: ["room_sessions"] });
+      toast.success("Session ended");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+
+  const openModal = (prefillFloor?: string, prefillRoom?: string) => {
     setShowModal(true);
     setModalStep(1);
-    setSelectedDancer(null);
-    setSelectedPackage(null);
-    setSelectedRoom(availableRooms[0]?.id ?? null);
-    setDancerScanState("idle");
+    setSelectedDancerId(null);
+    setSelectedDancerName(null);
+    setSelectedPkg(null);
+    setRoomFloor(prefillFloor ?? "");
+    setRoomName(prefillRoom ?? "");
     setPinInput("");
+    setCustomSongs(1);
+    setFaceScanStep("idle");
   };
 
-  const handleFaceScan = () => {
-    setDancerScanState("scanning");
-    setTimeout(() => {
-      const dancer = mockDancers[Math.floor(Math.random() * mockDancers.length)];
-      setSelectedDancer(dancer);
-      setDancerScanState("done");
-    }, 2000);
+  const closeModal = () => {
+    stopFaceCamera();
+    setShowModal(false);
   };
 
-  const handlePinConfirm = () => {
-    if (pinInput.length === 4) {
-      const dancer = mockDancers[Math.floor(Math.random() * mockDancers.length)];
-      setSelectedDancer(dancer);
-      setDancerScanState("done");
+  // ── PIN lookup ────────────────────────────────────────────────────────────
+
+  const handlePinConfirm = async () => {
+    if (pinInput.length < 4) return;
+    setPinLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("dancers")
+        .select("id, stage_name")
+        .eq("pin_code", pinInput)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) { toast.error("No dancer found with that PIN"); return; }
+      setSelectedDancerId(data.id);
+      setSelectedDancerName(data.stage_name);
       setPinInput("");
+    } catch {
+      toast.error("PIN lookup failed");
+    } finally {
+      setPinLoading(false);
     }
   };
 
-  const handleEndSession = (roomId: number) => {
-    setRooms(prev => prev.map(r => r.id === roomId ? { id: r.id, status: "available" as const } : r));
+  // ── Face scan ─────────────────────────────────────────────────────────────
+
+  const stopFaceCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
   };
 
-  const handleStartSession = () => {
-    if (!selectedDancer || selectedPackage === null || !selectedRoom) return;
-    const pkg = packages[selectedPackage];
-    setRooms(prev => prev.map(r =>
-      r.id === selectedRoom ? {
-        ...r,
-        status: "active" as const,
-        dancer: selectedDancer,
-        customer: `#${Math.random().toString(16).slice(2, 10)}…`,
-        package: pkg.label,
-        price: pkg.price,
-        startTime: Date.now(),
-        split: { house: pkg.house, dancer: pkg.dancer },
-      } : r
-    ));
-    setShowModal(false);
+  const startFaceCamera = async () => {
+    setFaceScanStep("camera");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch {
+      setFaceScanStep("error");
+    }
   };
+
+  const captureFace = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
+
+    stopFaceCamera();
+    setFaceScanStep("scanning");
+
+    const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? ANON_JWT;
+      const res = await fetch(
+        "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-search",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: base64 }),
+        }
+      );
+      const data = await res.json();
+      if (!mountedRef.current) return;
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+
+      if (data.matched) {
+        setSelectedDancerId(data.dancer_id);
+        setSelectedDancerName(data.stage_name);
+        setFaceScanStep("done");
+      } else {
+        const reasonMessages: Record<string, string> = {
+          no_face: "No face detected. Look directly at camera.",
+          no_match: "Face not recognized.",
+          dancer_not_found: "Face not on file.",
+          dancer_inactive: "Performer is not active.",
+        };
+        setFaceScanStep("error");
+        toast.error(reasonMessages[data.reason] ?? "Face scan failed");
+      }
+    } catch (e: unknown) {
+      if (!mountedRef.current) return;
+      setFaceScanStep("error");
+      toast.error(e instanceof Error ? e.message : "Face scan failed");
+    }
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const activeCount = activeSessions.length;
 
   return (
     <div className="min-h-screen bg-background">
       <TopBar badge="Room Attendant" centerLabel="Private Room Tracking" />
 
       <div className="p-6 max-w-7xl mx-auto">
-        {/* Header strip */}
+        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span className="text-primary font-medium">{activeCount} Active</span>
-            <span className="text-muted-foreground">|</span>
-            <span className="text-success font-medium">{availableCount} Available</span>
-            <span className="text-muted-foreground">|</span>
-            <span className="text-warning font-medium">{attentionCount} Needs Attention</span>
-            <span className="text-muted-foreground">|</span>
-            <span className="text-muted-foreground">{cleaningCount} Cleaning</span>
-          </div>
+          <span className="text-primary font-medium">{activeCount} Active Session{activeCount !== 1 ? "s" : ""}</span>
           <button
-            onClick={openModal}
+            onClick={() => openModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground font-semibold px-5 py-3 rounded-xl hover:glow-gold transition-all"
           >
-            <Plus className="w-4 h-4" /> Start New Room Session
+            <Plus className="w-4 h-4" /> Start New Session
           </button>
         </div>
 
-        {/* Room Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rooms.map((room) => {
-            const elapsed = room.startTime ? now - room.startTime : 0;
-            const isOvertime = room.status === "attention" || (room.status === "active" && elapsed > 900000);
+        {/* Floors & Rooms */}
+        <div className="space-y-8 mb-8">
+          {ROOM_LAYOUT.map(({ floor, rooms }) => (
+            <div key={floor}>
+              <h2 className="font-heading text-xl tracking-widest text-muted-foreground uppercase mb-3">
+                {floor}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {rooms.map((room) => {
+                  const key = buildRoomName(floor, room);
+                  const session = sessionByRoom[key];
+                  const elapsed = session ? now - new Date(session.entry_time).getTime() : 0;
+                  const isOvertime = elapsed > 900000;
+                  const dancer = session ? dancers.find((d) => d.id === session.dancer_id) : null;
 
-            return (
-              <div key={room.id} className={`glass-card p-5 border-2 transition-all ${statusStyles[room.status]}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-heading text-2xl tracking-wide">Room {room.id}</h3>
-                  <div className="flex items-center gap-2">
-                    {(room.status === "active" || room.status === "attention") && (
-                      <div className={`w-2.5 h-2.5 rounded-full animate-pulse-glow ${room.status === "attention" ? "bg-warning" : "bg-primary"}`} />
-                    )}
-                    <span className={`text-xs font-medium uppercase tracking-wider ${
-                      room.status === "active" ? "text-primary" :
-                      room.status === "available" ? "text-success" :
-                      room.status === "attention" ? "text-warning" :
-                      "text-muted-foreground"
-                    }`}>{room.status === "attention" ? "Needs Attention" : room.status}</span>
-                  </div>
-                </div>
-
-                {(room.status === "active" || room.status === "attention") && (
-                  <div className="space-y-2.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Dancer</span>
-                      <span className="text-foreground font-medium">{room.dancer}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Guest</span>
-                      <span className="text-muted-foreground font-mono text-xs">{room.customer}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Package</span>
-                      <span className="text-foreground">{room.package} — ${room.price}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Elapsed</span>
-                      <span className={`font-mono font-bold ${isOvertime ? "text-destructive" : "text-primary"}`}>
-                        {formatTimer(elapsed)}
-                      </span>
-                    </div>
-                    {isOvertime && (
-                      <div className="flex items-center gap-1.5 text-warning text-xs">
-                        <AlertTriangle className="w-3.5 h-3.5" /> Session overtime
+                  if (session) {
+                    return (
+                      <div key={key} className={`glass-card p-5 border-2 transition-all ${isOvertime ? "border-destructive" : "border-primary/60 glow-gold"}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="font-heading text-2xl tracking-wide">{room}</h3>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full animate-pulse-glow ${isOvertime ? "bg-destructive" : "bg-primary"}`} />
+                            <span className={`text-xs font-medium uppercase tracking-wider ${isOvertime ? "text-destructive" : "text-primary"}`}>
+                              {isOvertime ? "Overtime" : "Active"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-2 text-sm mb-4">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Dancer</span>
+                            <span className="font-medium">{dancer?.stage_name ?? "—"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Package</span>
+                            <span>{session.package_name} — ${session.gross_amount}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Elapsed</span>
+                            <span className={`font-mono font-bold ${isOvertime ? "text-destructive" : "text-primary"}`}>
+                              {formatTimer(elapsed)}
+                            </span>
+                          </div>
+                          {isOvertime && (
+                            <p className="text-xs text-destructive flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Session overtime
+                            </p>
+                          )}
+                          <div className="flex justify-between pt-2 border-t border-border/50">
+                            <span className="text-muted-foreground">Split</span>
+                            <span className="text-xs">
+                              House <span className="text-primary font-semibold">${session.house_cut}</span>{" "}
+                              | Dancer <span className="font-semibold">${session.dancer_cut}</span>
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => endSession.mutate(session.id)}
+                          disabled={endSession.isPending}
+                          className="w-full py-2.5 rounded-xl border border-destructive/50 text-destructive hover:bg-destructive/10 font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {endSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          End Session
+                        </button>
                       </div>
-                    )}
-                    <div className="flex justify-between pt-2 border-t border-border/50">
-                      <span className="text-muted-foreground">Split</span>
-                      <span className="text-xs">
-                        House <span className="text-primary font-semibold">${room.split?.house}</span> | Dancer <span className="font-semibold text-foreground">${room.split?.dancer}</span>
-                      </span>
+                    );
+                  }
+
+                  return (
+                    <div key={key} className="glass-card p-5 border-2 border-success/20 transition-all">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-heading text-2xl tracking-wide">{room}</h3>
+                        <span className="text-xs font-medium uppercase tracking-wider text-success">Available</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center py-6">
+                        <button
+                          onClick={() => openModal(floor, room)}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Start Session
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => handleEndSession(room.id)}
-                      className={`w-full mt-2 py-2.5 rounded-xl border font-medium text-sm transition-all ${
-                        room.status === "attention"
-                          ? "border-warning text-warning hover:bg-warning/10"
-                          : "border-destructive/50 text-destructive hover:bg-destructive/10"
-                      }`}
-                    >
-                      End Session
-                    </button>
-                  </div>
-                )}
-
-                {room.status === "available" && (
-                  <div className="flex flex-col items-center justify-center py-6">
-                    <p className="text-success font-medium text-lg mb-3">Available</p>
-                    <button
-                      onClick={openModal}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Start Session
-                    </button>
-                  </div>
-                )}
-
-                {room.status === "cleaning" && (
-                  <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-                    <p className="text-lg mb-1">🧹 Cleaning in Progress</p>
-                    <p className="text-xs">Estimated ready: ~10 min</p>
-                  </div>
-                )}
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
+
+        {/* Session History */}
+        {completedSessions.length > 0 && (
+          <div className="glass-card p-6">
+            <h2 className="font-heading text-2xl tracking-wide mb-4">Tonight's Completed Sessions</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground text-left">
+                    <th className="pb-3 pr-4">Time</th>
+                    <th className="pb-3 pr-4">Room</th>
+                    <th className="pb-3 pr-4">Package</th>
+                    <th className="pb-3 pr-4">Duration</th>
+                    <th className="pb-3 text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {completedSessions.slice(0, 20).map((s) => {
+                    const dur = s.exit_time
+                      ? Math.round((new Date(s.exit_time).getTime() - new Date(s.entry_time).getTime()) / 60000)
+                      : null;
+                    return (
+                      <tr key={s.id} className="border-b border-border/50 last:border-0">
+                        <td className="py-2.5 pr-4 font-mono text-muted-foreground">{formatTime(s.entry_time)}</td>
+                        <td className="py-2.5 pr-4">{s.room_name}</td>
+                        <td className="py-2.5 pr-4">{s.package_name}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">{dur != null ? `${dur} min` : "—"}</td>
+                        <td className="py-2.5 text-right text-primary font-semibold">${s.gross_amount}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 3-step Modal */}
+      {/* ── 3-Step Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card p-6 w-full max-w-lg border border-primary/20 animate-fade-in">
@@ -247,23 +414,17 @@ export default function PrivateRooms() {
               <div>
                 <h3 className="font-heading text-3xl tracking-wide mb-4">Step 1 — Identify Dancer</h3>
 
-                {dancerScanState === "idle" && (
-                  <div className="grid grid-cols-2 gap-3 mb-4">
+                {/* Face scan */}
+                {faceScanStep === "idle" && (
+                  <div className="space-y-4">
                     <button
-                      onClick={handleFaceScan}
-                      className="p-4 rounded-xl border border-border hover:border-primary/40 transition-all text-center"
+                      onClick={startFaceCamera}
+                      className="w-full p-4 rounded-xl border border-border hover:border-primary/40 transition-all flex items-center gap-3"
                     >
-                      <Video className="w-6 h-6 mx-auto mb-2 text-primary" />
-                      <span className="text-sm font-medium">🎥 Scan Face</span>
+                      <Video className="w-5 h-5 text-primary" />
+                      <span className="font-medium">Scan Face with Camera</span>
                     </button>
-                    <button
-                      onClick={() => setDancerScanState("done")}
-                      className="p-4 rounded-xl border border-border hover:border-primary/40 transition-all text-center hidden"
-                    >
-                      <span className="text-2xl mb-2 block">🔢</span>
-                      <span className="text-sm font-medium">Enter PIN</span>
-                    </button>
-                    <div className="col-span-1">
+                    <div>
                       <p className="text-xs text-muted-foreground mb-2">Or enter PIN:</p>
                       <div className="flex gap-2">
                         <input
@@ -272,50 +433,89 @@ export default function PrivateRooms() {
                           value={pinInput}
                           onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
                           placeholder="4-digit PIN"
-                          className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-foreground text-center font-mono tracking-widest"
+                          className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-center font-mono tracking-widest"
                         />
                         <button
                           onClick={handlePinConfirm}
-                          disabled={pinInput.length < 4}
-                          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium disabled:opacity-40"
+                          disabled={pinInput.length < 4 || pinLoading}
+                          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium disabled:opacity-40 flex items-center gap-1"
                         >
-                          Go
+                          {pinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Go"}
                         </button>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {dancerScanState === "scanning" && (
-                  <div className="flex flex-col items-center py-8">
-                    <div className="relative w-20 h-20 mb-4">
-                      <div className="absolute inset-0 rounded-full border-2 border-muted-foreground/30" />
-                      <div className="absolute inset-0 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-scan-arc" />
-                      <div className="absolute inset-3 flex items-center justify-center text-3xl">👤</div>
+                {faceScanStep === "camera" && (
+                  <div className="space-y-3 mb-4 animate-fade-in">
+                    <div className="relative aspect-video bg-secondary/80 rounded-xl border border-border overflow-hidden">
+                      <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                      <canvas ref={canvasRef} className="hidden" />
+                      {/* Face oval guide */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                      </div>
+                      <p className="absolute bottom-3 inset-x-0 text-center text-xs text-white/80">
+                        Center dancer's face in the oval
+                      </p>
+                      <button
+                        onClick={() => { stopFaceCamera(); setFaceScanStep("idle"); }}
+                        className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <p className="text-muted-foreground text-sm">Scanning face...</p>
+                    <button
+                      onClick={captureFace}
+                      className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 transition-all hover:glow-gold"
+                    >
+                      <Camera className="w-5 h-5" /> Capture Face
+                    </button>
                   </div>
                 )}
 
-                {dancerScanState === "done" && selectedDancer && (
-                  <div className="bg-success/10 border border-success/30 rounded-xl p-4 mb-4 animate-fade-in">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-heading text-lg text-primary">
-                        {selectedDancer.charAt(0)}
+                {faceScanStep === "scanning" && (
+                  <div className="animate-fade-in flex flex-col items-center gap-4 py-6">
+                    <div className="relative w-28 h-28">
+                      <div className="absolute inset-0 rounded-full border-2 border-muted-foreground/30" />
+                      <div className="absolute inset-0 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-scan-arc" />
+                      <div className="absolute inset-4 flex items-center justify-center">
+                        <User className="w-10 h-10 text-muted-foreground" />
                       </div>
-                      <div>
-                        <p className="text-success font-semibold">{selectedDancer} identified</p>
-                        <p className="text-muted-foreground text-xs">Ready to proceed</p>
-                      </div>
+                    </div>
+                    <p className="text-muted-foreground text-sm">Matching face...</p>
+                  </div>
+                )}
+
+                {faceScanStep === "error" && (
+                  <div className="text-center py-4 space-y-3">
+                    <p className="text-destructive">Face scan failed</p>
+                    <button onClick={() => setFaceScanStep("idle")} className="text-sm text-muted-foreground underline">
+                      Try again
+                    </button>
+                  </div>
+                )}
+
+                {selectedDancerName && (
+                  <div className="bg-success/10 border border-success/30 rounded-xl p-4 mt-4 animate-fade-in flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-heading text-lg text-primary">
+                      {selectedDancerName.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-success font-semibold">{selectedDancerName} identified</p>
+                      <p className="text-muted-foreground text-xs">Ready to proceed</p>
                     </div>
                   </div>
                 )}
 
                 <div className="flex gap-3 mt-4">
-                  <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">Cancel</button>
+                  <button onClick={closeModal} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">
+                    Cancel
+                  </button>
                   <button
                     onClick={() => setModalStep(2)}
-                    disabled={!selectedDancer}
+                    disabled={!selectedDancerId}
                     className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:glow-gold transition-all disabled:opacity-40"
                   >
                     Next →
@@ -328,13 +528,13 @@ export default function PrivateRooms() {
             {modalStep === 2 && (
               <div>
                 <h3 className="font-heading text-3xl tracking-wide mb-4">Step 2 — Select Package</h3>
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="grid grid-cols-2 gap-3 mb-4">
                   {packages.map((pkg, i) => (
                     <button
                       key={i}
-                      onClick={() => setSelectedPackage(i)}
+                      onClick={() => setSelectedPkg(i)}
                       className={`py-5 rounded-xl text-center transition-all border-2 ${
-                        selectedPackage === i
+                        selectedPkg === i
                           ? "bg-primary/10 border-primary glow-gold"
                           : "bg-secondary/50 border-border hover:border-primary/30"
                       }`}
@@ -344,12 +544,63 @@ export default function PrivateRooms() {
                       <p className="text-xs text-muted-foreground mt-1">House ${pkg.house} | Dancer ${pkg.dancer}</p>
                     </button>
                   ))}
+                  {/* Custom package */}
+                  <button
+                    onClick={() => setSelectedPkg(3)}
+                    className={`py-5 rounded-xl text-center transition-all border-2 col-span-2 ${
+                      selectedPkg === 3
+                        ? "bg-primary/10 border-primary glow-gold"
+                        : "bg-secondary/50 border-border hover:border-primary/30"
+                    }`}
+                  >
+                    <p className="font-heading text-xl">Custom</p>
+                    <p className="text-xs text-muted-foreground mt-1">Enter number of songs</p>
+                  </button>
                 </div>
+
+                {/* Custom song count input */}
+                {selectedPkg === 3 && (() => {
+                  const gross = Math.max(1, customSongs) * songPrice;
+                  const dancer = Math.round(gross * dancerPct);
+                  return (
+                    <div className="bg-secondary/50 rounded-xl p-4 mb-4 animate-fade-in space-y-3">
+                      <label className="text-sm text-muted-foreground">Number of Songs</label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setCustomSongs((n) => Math.max(1, n - 1))}
+                          className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                        >−</button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={customSongs}
+                          onChange={(e) => setCustomSongs(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-center font-mono text-xl tracking-widest focus:outline-none focus:border-primary"
+                        />
+                        <button
+                          onClick={() => setCustomSongs((n) => n + 1)}
+                          className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                        >+</button>
+                      </div>
+                      <div className="flex justify-between text-sm pt-1">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="text-primary font-bold text-lg">${gross}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>House ${gross - dancer}</span>
+                        <span>Dancer ${dancer}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="flex gap-3">
-                  <button onClick={() => setModalStep(1)} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">← Back</button>
+                  <button onClick={() => setModalStep(1)} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">
+                    ← Back
+                  </button>
                   <button
                     onClick={() => setModalStep(3)}
-                    disabled={selectedPackage === null}
+                    disabled={selectedPkg === null || (selectedPkg === 3 && customSongs < 1)}
                     className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:glow-gold transition-all disabled:opacity-40"
                   >
                     Next →
@@ -362,44 +613,61 @@ export default function PrivateRooms() {
             {modalStep === 3 && (
               <div>
                 <h3 className="font-heading text-3xl tracking-wide mb-4">Step 3 — Select Room</h3>
-                {availableRooms.length > 0 ? (
-                  <div className="space-y-2 mb-6">
-                    {availableRooms.map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => setSelectedRoom(r.id)}
-                        className={`w-full py-3 px-4 rounded-xl text-left transition-all border-2 ${
-                          selectedRoom === r.id
-                            ? "border-primary bg-primary/10 glow-gold"
-                            : "border-border hover:border-primary/30"
-                        }`}
-                      >
-                        <span className="font-heading text-xl">Room {r.id}</span>
-                        <span className="text-success text-xs ml-3">Available</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-warning text-sm mb-6">No rooms available.</p>
-                )}
+                <div className="space-y-4 mb-4">
+                  {ROOM_LAYOUT.map(({ floor, rooms }) => (
+                    <div key={floor}>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{floor}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {rooms.map((room) => {
+                          const key = buildRoomName(floor, room);
+                          const occupied = !!sessionByRoom[key];
+                          const selected = roomFloor === floor && roomName === room;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => { setRoomFloor(floor); setRoomName(room); }}
+                              disabled={occupied}
+                              className={`py-3 rounded-xl text-sm font-medium transition-all border-2 ${
+                                occupied
+                                  ? "border-border/30 text-muted-foreground/30 cursor-not-allowed"
+                                  : selected
+                                  ? "border-primary bg-primary/10 text-foreground glow-gold"
+                                  : "border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {room}
+                              {occupied && <span className="block text-xs text-muted-foreground/40">In use</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-                {/* Summary */}
-                {selectedDancer && selectedPackage !== null && selectedRoom && (
-                  <div className="bg-secondary/50 rounded-xl p-4 mb-4 text-sm space-y-1">
-                    <p><span className="text-muted-foreground">Dancer:</span> <span className="text-foreground font-medium">{selectedDancer}</span></p>
-                    <p><span className="text-muted-foreground">Package:</span> <span className="text-foreground">{packages[selectedPackage].label} — ${packages[selectedPackage].price}</span></p>
-                    <p><span className="text-muted-foreground">Room:</span> <span className="text-foreground">Room {selectedRoom}</span></p>
-                  </div>
-                )}
+                {selectedDancerName && selectedPkg !== null && roomName && (() => {
+                  const pkg = getActivePkg();
+                  if (!pkg) return null;
+                  return (
+                    <div className="bg-secondary/50 rounded-xl p-4 mb-4 text-sm space-y-1">
+                      <p><span className="text-muted-foreground">Dancer:</span> <span className="font-medium">{selectedDancerName}</span></p>
+                      <p><span className="text-muted-foreground">Package:</span> <span>{pkg.label} — ${pkg.price}</span></p>
+                      <p><span className="text-muted-foreground">Location:</span> <span>{roomFloor} — {roomName}</span></p>
+                      <p><span className="text-muted-foreground">Split:</span> <span>House ${pkg.house} | Dancer ${pkg.dancer}</span></p>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-3">
-                  <button onClick={() => setModalStep(2)} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">← Back</button>
+                  <button onClick={() => setModalStep(2)} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-all">
+                    ← Back
+                  </button>
                   <button
-                    onClick={handleStartSession}
-                    disabled={!selectedRoom || !selectedDancer || selectedPackage === null}
-                    className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:glow-gold transition-all disabled:opacity-40"
+                    onClick={() => startSession.mutate()}
+                    disabled={!roomName || !selectedDancerId || selectedPkg === null || startSession.isPending}
+                    className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:glow-gold transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                   >
-                    ✅ Start Session
+                    {startSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "✅ Start Session"}
                   </button>
                 </div>
               </div>

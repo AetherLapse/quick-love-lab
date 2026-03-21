@@ -13,17 +13,29 @@ function parseAAMVA(text: string): {
   dlNumber: string | null;
   dobMMDDYYYY: string | null;
   fullName: string | null;
+  address: string | null;
 } {
   const field = (code: string) =>
     text.match(new RegExp(`${code}([^\n\r\u001e\u001c]+)`))?.[1]?.trim() ?? null;
+
   const lastName  = field("DCS");
   const firstName = field("DAC");
   const fullName  = firstName && lastName ? `${firstName} ${lastName}`
                   : firstName ?? lastName ?? null;
+
+  const street  = field("DAG");
+  const city    = field("DAI");
+  const state   = field("DAJ");
+  const zipRaw  = field("DAK");
+  const zip     = zipRaw ? zipRaw.replace(/\D/g, "").slice(0, 5) : null;
+  const addressParts = [street, city, state, zip].filter(Boolean);
+  const address = addressParts.length > 0 ? addressParts.join(", ") : null;
+
   return {
-    dlNumber:     field("DAQ"),
-    dobMMDDYYYY:  text.match(/DBB(\d{8})/)?.[1] ?? null,
+    dlNumber:    field("DAQ"),
+    dobMMDDYYYY: text.match(/DBB(\d{8})/)?.[1] ?? null,
     fullName,
+    address,
   };
 }
 
@@ -69,6 +81,7 @@ interface ScanResult {
   visitCount?: number;
   denied: boolean;
   fullName?: string | null;
+  address?: string | null;
 }
 
 interface CameraIDScannerProps {
@@ -103,7 +116,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       setProcessLabel("Parsing license data...");
       setProcessProgress(50);
 
-      const { dlNumber, dobMMDDYYYY, fullName } = parseAAMVA(text);
+      const { dlNumber, dobMMDDYYYY, fullName, address } = parseAAMVA(text);
       const identifier = dlNumber ?? text;
       const hash = await sha256hex(identifier);
 
@@ -121,6 +134,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
         isReturning: false,
         visitCount: undefined,
         fullName,
+        address,
       };
 
       setResult(scanResult);

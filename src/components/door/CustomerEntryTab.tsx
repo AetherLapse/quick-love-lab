@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
 import { UserPlus, UserCheck, UserX, ShieldCheck, ShieldX, Hand, Loader2 } from "lucide-react";
 import CameraIDScanner from "@/components/CameraIDScanner";
-import { useGuestCheckIn } from "@/hooks/useDashboardData";
+import { useGuestCheckIn, useClubSettings } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
-import { useClubSettings } from "@/hooks/useDashboardData";
+import { toast } from "sonner";
 
 interface GuestLogEntry {
   time: string;
@@ -30,7 +30,7 @@ export default function CustomerEntryTab({ onNewGuest }: CustomerEntryTabProps) 
   };
 
   const handleScanEntry = useCallback(
-    async (result: { hash: string; denied: boolean; isReturning: boolean; visitCount?: number; fullName?: string | null }) => {
+    async (result: { hash: string; denied: boolean; isReturning: boolean; visitCount?: number; fullName?: string | null; address?: string | null }) => {
       if (result.denied) {
         setGuestLog((prev) => [{ time: now(), hash: "", status: "denied" }, ...prev].slice(0, 8));
         return;
@@ -46,6 +46,7 @@ export default function CustomerEntryTab({ onNewGuest }: CustomerEntryTabProps) 
           doorFee,
           loggedBy: userId,
           fullName: result.fullName ?? undefined,
+          address: result.address ?? undefined,
         });
 
         onNewGuest();
@@ -58,8 +59,10 @@ export default function CustomerEntryTab({ onNewGuest }: CustomerEntryTabProps) 
           },
           ...prev,
         ].slice(0, 8));
-      } catch {
-        setGuestLog((prev) => [{ time: now(), hash: "", status: "denied" }, ...prev].slice(0, 8));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("scanAdd failed:", msg);
+        toast.error("Entry failed: " + msg);
       }
     },
     [scanAdd, doorFee, onNewGuest]

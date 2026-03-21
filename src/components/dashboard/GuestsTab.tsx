@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import {
   Users, UserCheck, UserPlus, Search, RefreshCw, Clock,
   QrCode, PenLine, ChevronDown, ChevronRight, Flag, FlagOff,
-  StickyNote, Check, X,
+  StickyNote, Check, X, Eye, EyeOff,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
-  useGuestVisits, useCustomerEntries, useGuests, useUpdateGuest, today,
+  useGuestVisits, useCustomerEntries, useGuests, useUpdateGuest,
+  useGuestVisitHistory, today,
 } from "@/hooks/useDashboardData";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -28,6 +29,7 @@ interface GuestRow {
   last_visit_date: string;
   created_at: string;
   full_name?: string | null;
+  address?: string | null;
   notes?: string | null;
   flagged?: boolean;
   flagged_reason?: string | null;
@@ -68,11 +70,24 @@ function fmtDate(dateStr: string) {
 
 function GuestProfileRow({ guest }: { guest: GuestRow }) {
   const [expanded, setExpanded] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const { data: visitHistory = [], isLoading: loadingHistory } = useGuestVisitHistory(
+    expanded ? guest.id : null
+  );
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(guest.notes ?? "");
   const [flagReason, setFlagReason] = useState(guest.flagged_reason ?? "");
   const [showFlagInput, setShowFlagInput] = useState(false);
   const update = useUpdateGuest();
+
+  // Auto-hide after 10 seconds when revealed
+  const handleReveal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRevealed((r) => {
+      if (!r) setTimeout(() => setRevealed(false), 10000);
+      return !r;
+    });
+  };
 
   const saveNotes = async () => {
     try {
@@ -118,8 +133,8 @@ function GuestProfileRow({ guest }: { guest: GuestRow }) {
           {/* Name / ID */}
           <div>
             {guest.full_name ? (
-              <p className="text-sm font-medium text-foreground font-mono tracking-wide">
-                {maskName(guest.full_name)}
+              <p className={`text-sm font-medium text-foreground font-mono tracking-wide ${revealed ? "text-primary" : ""}`}>
+                {revealed ? guest.full_name : maskName(guest.full_name)}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground font-mono">{guest.guest_display_id}</p>
@@ -154,6 +169,19 @@ function GuestProfileRow({ guest }: { guest: GuestRow }) {
           <div className="w-5">
             {guest.flagged && <Flag className="w-4 h-4 text-destructive" />}
           </div>
+
+          {/* Eye button — stops propagation so it doesn't toggle expand */}
+          <button
+            onClick={handleReveal}
+            title={revealed ? "Hide details" : "Reveal details"}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
+              revealed
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+            }`}
+          >
+            {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </button>
 
@@ -180,8 +208,21 @@ function GuestProfileRow({ guest }: { guest: GuestRow }) {
             </div>
             {guest.full_name && (
               <div className="col-span-2">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Full Name (masked)</p>
-                <p className="font-mono text-foreground tracking-widest">{maskName(guest.full_name)}</p>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Full Name</p>
+                  {revealed && <span className="text-xs text-primary font-medium">· Revealed</span>}
+                </div>
+                <p className={`font-mono tracking-widest ${revealed ? "text-primary font-semibold" : "text-foreground"}`}>
+                  {revealed ? guest.full_name : maskName(guest.full_name)}
+                </p>
+              </div>
+            )}
+            {guest.address && (
+              <div className="col-span-2 md:col-span-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Address</p>
+                <p className={`text-sm ${revealed ? "text-primary font-medium" : "text-foreground font-mono"}`}>
+                  {revealed ? guest.address : maskText(guest.address)}
+                </p>
               </div>
             )}
           </div>
@@ -219,9 +260,9 @@ function GuestProfileRow({ guest }: { guest: GuestRow }) {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-foreground bg-secondary/40 rounded-lg px-3 py-2 min-h-[38px]">
+              <p className={`text-sm bg-secondary/40 rounded-lg px-3 py-2 min-h-[38px] ${revealed ? "text-primary" : "text-foreground"}`}>
                 {guest.notes
-                  ? maskText(guest.notes)
+                  ? (revealed ? guest.notes : maskText(guest.notes))
                   : <span className="text-muted-foreground italic text-xs">No notes</span>}
               </p>
             )}
@@ -246,7 +287,64 @@ function GuestProfileRow({ guest }: { guest: GuestRow }) {
             {guest.flagged && guest.flagged_reason && (
               <div className="text-xs text-destructive/80 flex items-center gap-1">
                 <Flag className="w-3 h-3" />
-                <span>{maskText(guest.flagged_reason)}</span>
+                <span>{revealed ? guest.flagged_reason : maskText(guest.flagged_reason)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Visit history table — always visible when expanded */}
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Visit History
+            </p>
+            {loadingHistory ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : visitHistory.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No visits recorded</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-secondary/40 border-b border-border">
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">#</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Date</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Entry</th>
+                      <th className="text-left px-3 py-2 text-muted-foreground font-medium">Exit</th>
+                      <th className="text-right px-3 py-2 text-muted-foreground font-medium">Fee</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(visitHistory as Array<{
+                      id: string;
+                      entry_time: string;
+                      exit_time?: string | null;
+                      door_fee: number;
+                      shift_date: string;
+                    }>).map((v, i) => (
+                      <tr key={v.id} className="hover:bg-secondary/20">
+                        <td className="px-3 py-2 text-muted-foreground">{visitHistory.length - i}</td>
+                        <td className="px-3 py-2 text-foreground">
+                          {new Date(v.shift_date + "T00:00:00").toLocaleDateString([], {
+                            month: "short", day: "numeric", year: "numeric",
+                          })}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-foreground">
+                          {revealed
+                            ? new Date(v.entry_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                            : new Date(v.entry_time).toLocaleTimeString([], { hour: "numeric" }).replace(/\d/g, "*")}
+                        </td>
+                        <td className="px-3 py-2 font-mono">
+                          {v.exit_time
+                            ? revealed
+                              ? new Date(v.exit_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                              : new Date(v.exit_time).toLocaleTimeString([], { hour: "numeric" }).replace(/\d/g, "*")
+                            : <span className="text-muted-foreground italic">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-success font-medium">${v.door_fee}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

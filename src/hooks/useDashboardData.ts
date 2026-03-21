@@ -142,6 +142,22 @@ export function useActiveDancers() {
   });
 }
 
+export function useGuestVisitHistory(guestId: string | null) {
+  return useQuery({
+    queryKey: ["guest_visit_history", guestId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("guest_visits")
+        .select("id, entry_time, exit_time, door_fee, shift_date")
+        .eq("guest_id", guestId!)
+        .order("entry_time", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!guestId,
+  });
+}
+
 export function useGuests(search = "") {
   return useQuery({
     queryKey: ["guests", search],
@@ -631,6 +647,7 @@ export function useGuestCheckIn() {
       doorFee: number;
       loggedBy: string;
       fullName?: string;
+      address?: string;
     }) => {
       const { data, error } = await supabase.rpc("upsert_guest", {
         p_dl_hash: dlHash,
@@ -638,6 +655,7 @@ export function useGuestCheckIn() {
         p_door_fee: doorFee,
         p_logged_by: loggedBy,
         p_full_name: fullName ?? null,
+        p_address: address ?? null,
       });
       if (error) throw error;
 

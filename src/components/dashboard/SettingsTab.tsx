@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Home, Users, User, Lock, Loader2, Plus, Camera,
   ShieldCheck, ChevronRight, X, Edit, AlertTriangle, CheckCircle2,
-  RefreshCw, Eye, EyeOff,
+  RefreshCw, Eye, EyeOff, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -290,13 +290,16 @@ function StaffProfileDrawer({ member, onClose, onEdit, onToggleActive }: {
 }
 
 // ─── Profile Drawer ───────────────────────────────────────────────────────────
-function ProfileDrawer({ dancer, onClose, onEdit, onEnroll, onToggleActive }: {
+function ProfileDrawer({ dancer, onClose, onEdit, onEnroll, onToggleActive, onDelete }: {
   dancer: Dancer;
   onClose: () => void;
   onEdit: () => void;
   onEnroll: () => void;
   onToggleActive: () => void;
+  onDelete: () => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   return (
     <>
       <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40" onClick={onClose} />
@@ -377,6 +380,43 @@ function ProfileDrawer({ dancer, onClose, onEdit, onEnroll, onToggleActive }: {
               {dancer.is_active ? "Deactivate" : "Activate"}
             </Button>
           </div>
+
+          {/* Remove Dancer */}
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-destructive/30 text-destructive/70 hover:text-destructive hover:border-destructive hover:bg-destructive/10 text-sm transition-all"
+            >
+              <Trash2 className="w-4 h-4" /> Remove Dancer
+            </button>
+          ) : (
+            <div className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 p-4 space-y-3">
+              <p className="text-sm text-destructive font-medium flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                Permanently remove {dancer.stage_name}?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This deletes the profile, check-in history, and face enrollment. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={onDelete}
+                  className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Confirm Remove
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -449,48 +489,45 @@ export function SettingsTab() {
     setDialogOpen(true);
   };
 
-  const sendOtp = async (type: "email" | "phone") => {
-    const contact = type === "email" ? form.email.trim() : form.phone.trim();
-    if (!contact) { toast.error(`Enter ${type === "email" ? "an email address" : "a phone number"} first.`); return; }
-    const setter = type === "email" ? setEmailOtp : setPhoneOtp;
-    setter((s) => ({ ...s, sending: true }));
+  const sendOtp = async () => {
+    const contact = form.email.trim();
+    if (!contact) { toast.error("Enter an email address first."); return; }
+    setEmailOtp((s) => ({ ...s, sending: true }));
     try {
       const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/otp", {
         method: "POST",
         headers: { Authorization: `Bearer ${ANON_JWT}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send", contact, type, dancer_name: form.full_name.trim() || undefined }),
+        body: JSON.stringify({ action: "send", contact, type: "email", dancer_name: form.full_name.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      setter((s) => ({ ...s, sending: false, sent: true, token: data.token, input: "", verified: false }));
-      toast.success(`Code sent to ${type === "email" ? "email" : "phone"}.`);
+      setEmailOtp((s) => ({ ...s, sending: false, sent: true, token: data.token, input: "", verified: false }));
+      toast.success("Code sent to email.");
     } catch (err: unknown) {
-      setter((s) => ({ ...s, sending: false }));
+      setEmailOtp((s) => ({ ...s, sending: false }));
       toast.error(err instanceof Error ? err.message : "Failed to send code");
     }
   };
 
-  const verifyOtp = async (type: "email" | "phone") => {
-    const state = type === "email" ? emailOtp : phoneOtp;
-    const setter = type === "email" ? setEmailOtp : setPhoneOtp;
-    setter((s) => ({ ...s, verifying: true }));
+  const verifyOtp = async () => {
+    setEmailOtp((s) => ({ ...s, verifying: true }));
     try {
       const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/otp", {
         method: "POST",
         headers: { Authorization: `Bearer ${ANON_JWT}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", token: state.token, code: state.input.trim() }),
+        body: JSON.stringify({ action: "verify", token: emailOtp.token, code: emailOtp.input.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       if (data.valid) {
-        setter((s) => ({ ...s, verifying: false, verified: true }));
-        toast.success(`${type === "email" ? "Email" : "Phone"} verified!`);
+        setEmailOtp((s) => ({ ...s, verifying: false, verified: true }));
+        toast.success("Email verified!");
       } else {
-        setter((s) => ({ ...s, verifying: false }));
+        setEmailOtp((s) => ({ ...s, verifying: false }));
         toast.error(data.reason === "Code expired" ? "Code expired — please resend." : "Incorrect code. Try again.");
       }
     } catch (err: unknown) {
-      setter((s) => ({ ...s, verifying: false }));
+      setEmailOtp((s) => ({ ...s, verifying: false }));
       toast.error(err instanceof Error ? err.message : "Verification failed");
     }
   };
@@ -534,6 +571,17 @@ export function SettingsTab() {
     await supabase.from("dancers").update({ is_active: !d.is_active }).eq("id", d.id);
     setProfileDancer(null);
     refetchDancers();
+  };
+
+  const handleDelete = async (dancer: Dancer) => {
+    const { error } = await supabase.rpc("delete_dancer_cascade", { p_dancer_id: dancer.id });
+    if (error) {
+      toast.error("Failed to remove dancer: " + error.message);
+    } else {
+      toast.success(`${dancer.stage_name} removed.`);
+      setProfileDancer(null);
+      refetchDancers();
+    }
   };
 
   const openAddStaff = () => {
@@ -797,7 +845,7 @@ export function SettingsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => sendOtp("email")}
+                        onClick={() => sendOtp()}
                         disabled={!form.email || emailOtp.sending}
                         className="flex-shrink-0"
                       >
@@ -817,7 +865,7 @@ export function SettingsTab() {
                     />
                     <Button
                       size="sm"
-                      onClick={() => verifyOtp("email")}
+                      onClick={() => verifyOtp()}
                       disabled={emailOtp.input.length < 6 || emailOtp.verifying}
                       className="flex-shrink-0"
                     >
@@ -948,6 +996,7 @@ export function SettingsTab() {
           onEdit={() => openEdit(profileDancer)}
           onEnroll={() => { setEnrollDancer(profileDancer); setProfileDancer(null); }}
           onToggleActive={() => toggleActive(profileDancer)}
+          onDelete={() => handleDelete(profileDancer)}
         />
       )}
 

@@ -142,6 +142,25 @@ export function useActiveDancers() {
   });
 }
 
+export function useGuests(search = "") {
+  return useQuery({
+    queryKey: ["guests", search],
+    queryFn: async () => {
+      let q = supabase
+        .from("guests")
+        .select("*")
+        .order("last_visit_date", { ascending: false });
+      if (search.trim()) {
+        q = q.ilike("guest_display_id", `%${search.trim()}%`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return data ?? [];
+    },
+    refetchInterval: 30000,
+  });
+}
+
 export function useProfiles() {
   return useQuery({
     queryKey: ["profiles"],
@@ -605,17 +624,20 @@ export function useGuestCheckIn() {
       displayId,
       doorFee,
       loggedBy,
+      fullName,
     }: {
       dlHash: string;
       displayId: string;
       doorFee: number;
       loggedBy: string;
+      fullName?: string;
     }) => {
       const { data, error } = await supabase.rpc("upsert_guest", {
         p_dl_hash: dlHash,
         p_display_id: displayId,
         p_door_fee: doorFee,
         p_logged_by: loggedBy,
+        p_full_name: fullName ?? null,
       });
       if (error) throw error;
 
@@ -634,4 +656,28 @@ export function useGuestCheckIn() {
   });
 
   return { manualAdd, scanAdd };
+}
+
+export function useUpdateGuest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      notes,
+      flagged,
+      flagged_reason,
+    }: {
+      id: string;
+      notes?: string | null;
+      flagged?: boolean;
+      flagged_reason?: string | null;
+    }) => {
+      const { error } = await supabase
+        .from("guests")
+        .update({ notes, flagged, flagged_reason })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["guests"] }),
+  });
 }

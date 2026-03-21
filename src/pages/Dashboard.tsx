@@ -7,8 +7,9 @@ import { RevenueTab } from "@/components/dashboard/RevenueTab";
 import { PerformersTab } from "@/components/dashboard/PerformersTab";
 import { ReportsTab } from "@/components/dashboard/ReportsTab";
 import { SettingsTab } from "@/components/dashboard/SettingsTab";
+import { GuestsTab } from "@/components/dashboard/GuestsTab";
 
-const tabs = ["Summary", "Revenue", "Performers", "Reports", "Settings"] as const;
+const tabs = ["Summary", "Revenue", "Performers", "Guests", "Reports", "Settings"] as const;
 type Tab = typeof tabs[number];
 
 export default function Dashboard() {
@@ -73,6 +74,7 @@ export default function Dashboard() {
         {activeTab === "Summary" && <SummaryTab />}
         {activeTab === "Revenue" && <RevenueTab />}
         {activeTab === "Performers" && <PerformersTab />}
+        {activeTab === "Guests" && <GuestsTab />}
         {activeTab === "Reports" && <ReportsTab />}
         {activeTab === "Settings" && <SettingsTab />}
       </div>

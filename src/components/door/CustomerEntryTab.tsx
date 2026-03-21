@@ -30,7 +30,7 @@ export default function CustomerEntryTab({ onNewGuest }: CustomerEntryTabProps) 
   };
 
   const handleScanEntry = useCallback(
-    async (result: { hash: string; denied: boolean; isReturning: boolean; visitCount?: number }) => {
+    async (result: { hash: string; denied: boolean; isReturning: boolean; visitCount?: number; fullName?: string | null }) => {
       if (result.denied) {
         setGuestLog((prev) => [{ time: now(), hash: "", status: "denied" }, ...prev].slice(0, 8));
         return;
@@ -45,6 +45,7 @@ export default function CustomerEntryTab({ onNewGuest }: CustomerEntryTabProps) 
           displayId: result.hash.slice(0, 8).toUpperCase(),
           doorFee,
           loggedBy: userId,
+          fullName: result.fullName ?? undefined,
         });
 
         onNewGuest();

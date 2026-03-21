@@ -9,12 +9,21 @@ const PDF417_HINTS = new Map<DecodeHintType, unknown>();
 PDF417_HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.PDF_417]);
 
 // AAMVA PDF417 DL format parsing
-function parseAAMVA(text: string): { dlNumber: string | null; dobMMDDYYYY: string | null } {
-  const dlMatch = text.match(/DAQ([^\n\r\u001e\u001c]+)/);
-  const dobMatch = text.match(/DBB(\d{8})/);
+function parseAAMVA(text: string): {
+  dlNumber: string | null;
+  dobMMDDYYYY: string | null;
+  fullName: string | null;
+} {
+  const field = (code: string) =>
+    text.match(new RegExp(`${code}([^\n\r\u001e\u001c]+)`))?.[1]?.trim() ?? null;
+  const lastName  = field("DCS");
+  const firstName = field("DAC");
+  const fullName  = firstName && lastName ? `${firstName} ${lastName}`
+                  : firstName ?? lastName ?? null;
   return {
-    dlNumber: dlMatch?.[1]?.trim() ?? null,
-    dobMMDDYYYY: dobMatch?.[1] ?? null,
+    dlNumber:     field("DAQ"),
+    dobMMDDYYYY:  text.match(/DBB(\d{8})/)?.[1] ?? null,
+    fullName,
   };
 }
 
@@ -59,6 +68,7 @@ interface ScanResult {
   isReturning: boolean;
   visitCount?: number;
   denied: boolean;
+  fullName?: string | null;
 }
 
 interface CameraIDScannerProps {
@@ -93,7 +103,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
       setProcessLabel("Parsing license data...");
       setProcessProgress(50);
 
-      const { dlNumber, dobMMDDYYYY } = parseAAMVA(text);
+      const { dlNumber, dobMMDDYYYY, fullName } = parseAAMVA(text);
       const identifier = dlNumber ?? text;
       const hash = await sha256hex(identifier);
 
@@ -110,6 +120,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
         denied,
         isReturning: false,
         visitCount: undefined,
+        fullName,
       };
 
       setResult(scanResult);

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Camera, X, Lock, ShieldCheck, ShieldX, Hand, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 import { DecodeHintType, BarcodeFormat } from "@zxing/library";
 
 // Module-level hints — PDF417 only for speed
@@ -18,11 +18,28 @@ function parseAAMVA(text: string): { dlNumber: string | null; dobMMDDYYYY: strin
   };
 }
 
-function isOver21(dobMMDDYYYY: string): boolean {
-  const mm = parseInt(dobMMDDYYYY.slice(0, 2), 10) - 1;
-  const dd = parseInt(dobMMDDYYYY.slice(2, 4), 10);
-  const yyyy = parseInt(dobMMDDYYYY.slice(4, 8), 10);
-  const dob = new Date(yyyy, mm, dd);
+function parseDOB(dobStr: string): Date | null {
+  if (dobStr.length !== 8) return null;
+  let mm: number, dd: number, yyyy: number;
+  const first4 = parseInt(dobStr.slice(0, 4), 10);
+  if (first4 >= 1900 && first4 <= 2099) {
+    // YYYYMMDD — used by many barcode generators and Canadian DLs
+    yyyy = first4;
+    mm = parseInt(dobStr.slice(4, 6), 10) - 1;
+    dd = parseInt(dobStr.slice(6, 8), 10);
+  } else {
+    // MMDDYYYY — AAMVA US standard
+    mm = parseInt(dobStr.slice(0, 2), 10) - 1;
+    dd = parseInt(dobStr.slice(2, 4), 10);
+    yyyy = parseInt(dobStr.slice(4, 8), 10);
+  }
+  const date = new Date(yyyy, mm, dd);
+  return isNaN(date.getTime()) ? null : date;
+}
+
+function isOver21(dobStr: string): boolean {
+  const dob = parseDOB(dobStr);
+  if (!dob) return false; // Can't parse → deny as safe default
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 21);
   return dob <= cutoff;
@@ -52,7 +69,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const mountedRef = useRef(true);
 
   const [step, setStep] = useState<ScanStep>("idle");
@@ -62,14 +79,12 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   const [cameraError, setCameraError] = useState(false);
 
   const stopCamera = useCallback(() => {
+    try { controlsRef.current?.stop(); } catch { /* ignore */ }
+    controlsRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    try {
-      codeReaderRef.current?.reset();
-    } catch { /* ignore cleanup errors */ }
-    codeReaderRef.current = null;
   }, []);
 
   const processBarcode = useCallback(
@@ -116,27 +131,28 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
   const startAutoScan = useCallback(
     (videoEl: HTMLVideoElement) => {
       const reader = new BrowserMultiFormatReader(PDF417_HINTS);
-      codeReaderRef.current = reader;
-
       reader
-        .decodeFromVideoElement(videoEl)
-        .then((result) => {
-          if (!mountedRef.current) return;
-          stopCamera();
+        .decodeFromVideoElement(videoEl, (result, _err, controls) => {
+          if (!result) return; // frame had no barcode — keep scanning
+          if (!mountedRef.current) { controls.stop(); return; }
+          controls.stop();
+          controlsRef.current = null;
+          streamRef.current?.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
           setStep("flash");
+          const text = result.getText();
           setTimeout(() => {
             if (!mountedRef.current) return;
             setStep("processing");
             setProcessProgress(20);
             setProcessLabel("Reading barcode...");
-            processBarcode(result.getText());
+            processBarcode(text);
           }, 300);
         })
-        .catch(() => {
-          // Cancelled or error — no-op
-        });
+        .then((controls) => { controlsRef.current = controls; })
+        .catch(() => { /* cancelled or permission error — no-op */ });
     },
-    [stopCamera, processBarcode]
+    [processBarcode]
   );
 
   const startCamera = useCallback(async () => {

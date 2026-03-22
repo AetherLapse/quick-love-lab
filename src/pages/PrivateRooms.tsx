@@ -42,6 +42,7 @@ export default function PrivateRooms() {
   const [pinInput, setPinInput] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
   const [customSongs, setCustomSongs] = useState(1);
+  const [customPrice, setCustomPrice] = useState(50);
   const [faceScanStep, setFaceScanStep] = useState<"idle" | "camera" | "scanning" | "done" | "error">("idle");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,7 +69,8 @@ export default function PrivateRooms() {
     if (selectedPkg === null) return null;
     if (selectedPkg < packages.length) return packages[selectedPkg];
     const songs = Math.max(1, customSongs);
-    const gross = songs * songPrice;
+    const pricePerSong = Math.max(1, customPrice);
+    const gross = songs * pricePerSong;
     const dancer = Math.round(gross * dancerPct);
     return { songs, label: `${songs} Song${songs !== 1 ? "s" : ""} (Custom)`, price: gross, house: gross - dancer, dancer };
   };
@@ -80,6 +82,11 @@ export default function PrivateRooms() {
 
   // Session history (completed today)
   const completedSessions = todaySessions.filter((s) => s.exit_time);
+
+  // Sync customPrice default to DB song_price once settings load
+  useEffect(() => {
+    if (settings?.song_price) setCustomPrice(Number(settings.song_price));
+  }, [settings?.song_price]);
 
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000);
@@ -150,6 +157,7 @@ export default function PrivateRooms() {
     setRoomName(prefillRoom ?? "");
     setPinInput("");
     setCustomSongs(1);
+    setCustomPrice(songPrice);
     setFaceScanStep("idle");
   };
 
@@ -558,37 +566,74 @@ export default function PrivateRooms() {
                   </button>
                 </div>
 
-                {/* Custom song count input */}
+                {/* Custom song count + price input */}
                 {selectedPkg === 3 && (() => {
-                  const gross = Math.max(1, customSongs) * songPrice;
+                  const songs = Math.max(1, customSongs);
+                  const pricePerSong = Math.max(1, customPrice);
+                  const gross = songs * pricePerSong;
                   const dancer = Math.round(gross * dancerPct);
                   return (
-                    <div className="bg-secondary/50 rounded-xl p-4 mb-4 animate-fade-in space-y-3">
-                      <label className="text-sm text-muted-foreground">Number of Songs</label>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => setCustomSongs((n) => Math.max(1, n - 1))}
-                          className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
-                        >−</button>
-                        <input
-                          type="number"
-                          min={1}
-                          value={customSongs}
-                          onChange={(e) => setCustomSongs(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-center font-mono text-xl tracking-widest focus:outline-none focus:border-primary"
-                        />
-                        <button
-                          onClick={() => setCustomSongs((n) => n + 1)}
-                          className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
-                        >+</button>
+                    <div className="bg-secondary/50 rounded-xl p-4 mb-4 animate-fade-in space-y-4">
+
+                      {/* Songs row */}
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Number of Songs</label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setCustomSongs((n) => Math.max(1, n - 1))}
+                            className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                          >−</button>
+                          <input
+                            type="number"
+                            min={1}
+                            value={customSongs}
+                            onChange={(e) => setCustomSongs(Math.max(1, parseInt(e.target.value) || 1))}
+                            className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-center font-mono text-xl tracking-widest focus:outline-none focus:border-primary"
+                          />
+                          <button
+                            onClick={() => setCustomSongs((n) => n + 1)}
+                            className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                          >+</button>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-sm pt-1">
-                        <span className="text-muted-foreground">Total</span>
-                        <span className="text-primary font-bold text-lg">${gross}</span>
+
+                      {/* Price per song row */}
+                      <div className="space-y-2">
+                        <label className="text-sm text-muted-foreground">Price per Song</label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setCustomPrice((n) => Math.max(1, n - 5))}
+                            className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                          >−</button>
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">$</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={customPrice}
+                              onChange={(e) => setCustomPrice(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-full bg-background border border-border rounded-xl pl-7 pr-3 py-2 text-center font-mono text-xl tracking-widest focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          <button
+                            onClick={() => setCustomPrice((n) => n + 5)}
+                            className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:border-primary/40 transition-all"
+                          >+</button>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>House ${gross - dancer}</span>
-                        <span>Dancer ${dancer}</span>
+
+                      {/* Total */}
+                      <div className="border-t border-border pt-3 space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-muted-foreground">
+                            {songs} song{songs !== 1 ? "s" : ""} × ${pricePerSong}
+                          </span>
+                          <span className="text-primary font-bold text-xl">${gross}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>House ${gross - dancer}</span>
+                          <span>Dancer ${dancer}</span>
+                        </div>
                       </div>
                     </div>
                   );

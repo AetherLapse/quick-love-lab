@@ -155,13 +155,14 @@ export const periodData = {
   },
 };
 
-export const periods = ["Today", "This Week", "This Month", "This Year"] as const;
+export const periods = ["Today", "This Week", "This Month", "This Year", "Custom"] as const;
 export type Period = typeof periods[number];
 export const periodKeys: Record<Period, keyof typeof periodData> = {
   "Today": "today",
   "This Week": "week",
   "This Month": "month",
   "This Year": "year",
+  "Custom": "today",
 };
 
 export const topPerformers = [

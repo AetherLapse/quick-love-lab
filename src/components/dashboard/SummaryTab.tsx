@@ -7,8 +7,7 @@ import { ArrowUp, ArrowDown, Crown, DoorOpen, Sofa, Home, Wallet, Users, User, M
 import { periodKeys, type Period } from "./mockData";
 import { useCountUp } from "./useCountUp";
 import { DateFilter } from "./DateFilter";
-import { useDashboardStats, useRevenueChartData, useMonthlyHeatmap } from "@/hooks/useDashboardData";
-import { useDancerPerformance } from "@/hooks/useDashboardData";
+import { useDashboardStats, useRevenueChartData, useMonthlyHeatmap, useDancerPerformance, today } from "@/hooks/useDashboardData";
 
 const chartTooltipStyle = {
   backgroundColor: "hsl(240 15% 10%)",
@@ -55,10 +54,11 @@ function OpsCard({ label, value, icon, suffix, animKey }: { label: string; value
 
 export function SummaryTab() {
   const [activePeriod, setActivePeriod] = useState<Period>("Today");
-  const { stats, isLoading } = useDashboardStats(activePeriod);
-  const { chartData, splitData } = useRevenueChartData(activePeriod);
+  const [customRange, setCustomRange] = useState({ start: today(), end: today() });
+  const { stats, isLoading } = useDashboardStats(activePeriod, customRange);
+  const { chartData, splitData } = useRevenueChartData(activePeriod, customRange);
   const { heatmap } = useMonthlyHeatmap();
-  const { performance } = useDancerPerformance(activePeriod);
+  const { performance } = useDancerPerformance(activePeriod, customRange);
 
   const topPerformers = performance.slice(0, 3).map((d, i) => ({ rank: i + 1, ...d }));
 
@@ -90,7 +90,7 @@ export function SummaryTab() {
         <p className="text-muted-foreground text-sm">
           {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
         </p>
-        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} />
+        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
       </div>
 
       {isLoading ? (

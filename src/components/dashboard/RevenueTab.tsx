@@ -8,7 +8,7 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { type Period } from "./mockData";
 import { useCountUp } from "./useCountUp";
 import { DateFilter } from "./DateFilter";
-import { useDashboardStats, useRevenueChartData, useRevenueStreams } from "@/hooks/useDashboardData";
+import { useDashboardStats, useRevenueChartData, useRevenueStreams, today } from "@/hooks/useDashboardData";
 
 const chartTooltipStyle = {
   backgroundColor: "hsl(240 15% 10%)",
@@ -34,9 +34,10 @@ function BigCard({ label, value, animKey }: { label: string; value: number; anim
 
 export function RevenueTab() {
   const [activePeriod, setActivePeriod] = useState<Period>("Today");
-  const { stats, isLoading: statsLoading } = useDashboardStats(activePeriod);
-  const { chartData, isLoading: chartLoading } = useRevenueChartData(activePeriod);
-  const { streams, isLoading: streamsLoading } = useRevenueStreams(activePeriod);
+  const [customRange, setCustomRange] = useState({ start: today(), end: today() });
+  const { stats, isLoading: statsLoading } = useDashboardStats(activePeriod, customRange);
+  const { chartData, isLoading: chartLoading } = useRevenueChartData(activePeriod, customRange);
+  const { streams, isLoading: streamsLoading } = useRevenueStreams(activePeriod, customRange);
 
   const isLoading = statsLoading || chartLoading || streamsLoading;
 
@@ -65,7 +66,7 @@ export function RevenueTab() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h2 className="font-heading text-3xl tracking-wide">Revenue Deep Dive</h2>
-        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} />
+        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
       </div>
 
       {isLoading ? (

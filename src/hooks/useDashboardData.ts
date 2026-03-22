@@ -5,21 +5,27 @@ import type { Period } from "@/components/dashboard/mockData";
 
 // ─── Date range helpers ───────────────────────────────────────────────────────
 
-export function getDateRange(period: Period): { start: string; end: string } {
+export type CustomRange = { start: string; end: string };
+
+export function getDateRange(period: Period, custom?: CustomRange): CustomRange {
+  if (period === "Custom" && custom?.start && custom?.end) return custom;
   const now = new Date();
-  const today = now.toISOString().split("T")[0];
-  if (period === "Today") return { start: today, end: today };
+  const todayStr = now.toISOString().split("T")[0];
+  if (period === "Today") return { start: todayStr, end: todayStr };
   if (period === "This Week") {
     const d = new Date(now);
     d.setDate(now.getDate() - now.getDay());
-    return { start: d.toISOString().split("T")[0], end: today };
+    return { start: d.toISOString().split("T")[0], end: todayStr };
   }
   if (period === "This Month") {
     const d = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { start: d.toISOString().split("T")[0], end: today };
+    return { start: d.toISOString().split("T")[0], end: todayStr };
   }
-  const d = new Date(now.getFullYear(), 0, 1);
-  return { start: d.toISOString().split("T")[0], end: today };
+  if (period === "This Year") {
+    const d = new Date(now.getFullYear(), 0, 1);
+    return { start: d.toISOString().split("T")[0], end: todayStr };
+  }
+  return { start: todayStr, end: todayStr };
 }
 
 export function today() {
@@ -211,8 +217,8 @@ export function useClubSettings() {
 
 // ─── Aggregated dashboard stats ───────────────────────────────────────────────
 
-export function useDashboardStats(period: Period) {
-  const { start, end } = getDateRange(period);
+export function useDashboardStats(period: Period, custom?: CustomRange) {
+  const { start, end } = getDateRange(period, custom);
   const sessions = useRoomSessions(start, end);
   const guestVisits = useGuestVisits(start, end);
   const customerEntries = useCustomerEntries(start, end);
@@ -270,8 +276,8 @@ export function useDashboardStats(period: Period) {
 
 // ─── Per-dancer performance for today / period ───────────────────────────────
 
-export function useDancerPerformance(period: Period) {
-  const { start, end } = getDateRange(period);
+export function useDancerPerformance(period: Period, custom?: CustomRange) {
+  const { start, end } = getDateRange(period, custom);
   const sessions = useRoomSessions(start, end);
   const attendance = useAttendanceLogs(start, end);
   const dancers = useDancers();
@@ -338,8 +344,8 @@ export function useDancerPerformance(period: Period) {
 
 // ─── Revenue chart data ───────────────────────────────────────────────────────
 
-export function useRevenueChartData(period: Period) {
-  const { start, end } = getDateRange(period);
+export function useRevenueChartData(period: Period, custom?: CustomRange) {
+  const { start, end } = getDateRange(period, custom);
   const sessions = useRoomSessions(start, end);
   const guestVisits = useGuestVisits(start, end);
   const customerEntries = useCustomerEntries(start, end);
@@ -413,7 +419,26 @@ export function useRevenueChartData(period: Period) {
       });
     }
 
-    // This Year — by month
+    // This Year or Custom — by month (Custom with wide range) or by day (Custom narrow)
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const daysDiff = Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+
+    if (period === "Custom" && daysDiff <= 31) {
+      // Day-by-day for short custom ranges
+      return Array.from({ length: daysDiff + 1 }, (_, i) => {
+        const d = new Date(startDate);
+        d.setDate(startDate.getDate() + i);
+        const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const dateStr = d.toISOString().split("T")[0];
+        const door =
+          gv.filter((g) => g.entry_time.startsWith(dateStr)).reduce((s, g) => s + Number(g.door_fee), 0) +
+          ce.filter((c) => c.entry_time.startsWith(dateStr)).reduce((s, c) => s + Number(c.door_fee), 0);
+        const room = rs.filter((r) => r.entry_time.startsWith(dateStr)).reduce((s, r) => s + Number(r.gross_amount), 0);
+        return { period: label, door, room };
+      });
+    }
+
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     return months.map((m, mi) => {
       const door =
@@ -428,7 +453,7 @@ export function useRevenueChartData(period: Period) {
         .reduce((s, r) => s + Number(r.gross_amount), 0);
       return { period: m, door, room };
     });
-  }, [period, sessions.data, guestVisits.data, customerEntries.data]);
+  }, [period, start, end, sessions.data, guestVisits.data, customerEntries.data]);
 
   const splitData = useMemo(() => {
     return chartData.map((d) => ({
@@ -444,8 +469,8 @@ export function useRevenueChartData(period: Period) {
 
 // ─── Revenue streams breakdown ────────────────────────────────────────────────
 
-export function useRevenueStreams(period: Period) {
-  const { start, end } = getDateRange(period);
+export function useRevenueStreams(period: Period, custom?: CustomRange) {
+  const { start, end } = getDateRange(period, custom);
   const sessions = useRoomSessions(start, end);
   const guestVisits = useGuestVisits(start, end);
   const customerEntries = useCustomerEntries(start, end);

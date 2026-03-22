@@ -4,7 +4,7 @@ import { Crown, X, AlertCircle, Check, Loader2 } from "lucide-react";
 import { type Period } from "./mockData";
 import { useCountUp } from "./useCountUp";
 import { DateFilter } from "./DateFilter";
-import { useDancerPerformance } from "@/hooks/useDashboardData";
+import { useDancerPerformance, today } from "@/hooks/useDashboardData";
 
 const chartTooltipStyle = {
   backgroundColor: "hsl(240 15% 10%)",
@@ -30,11 +30,12 @@ function KPIStrip({ label, value, animKey }: { label: string; value: number | st
 
 export function PerformersTab() {
   const [activePeriod, setActivePeriod] = useState<Period>("Today");
+  const [customRange, setCustomRange] = useState({ start: today(), end: today() });
   const [sortCol, setSortCol] = useState<SortCol>("sessions");
   const [sortAsc, setSortAsc] = useState(false);
   const [drawerDancer, setDrawerDancer] = useState<string | null>(null);
 
-  const { performance: dancers, isLoading } = useDancerPerformance(activePeriod);
+  const { performance: dancers, isLoading } = useDancerPerformance(activePeriod, customRange);
 
   const sortedDancers = useMemo(() => {
     return [...dancers].sort((a, b) => {
@@ -72,7 +73,7 @@ export function PerformersTab() {
     <div className="relative">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h2 className="font-heading text-3xl tracking-wide">Performer Analytics</h2>
-        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} />
+        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
       </div>
 
       {isLoading ? (

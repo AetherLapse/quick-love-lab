@@ -1,83 +1,122 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, DoorOpen, Sofa, BarChart3, Eye } from "lucide-react";
+import { LogOut } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
-
-const roles = [
-  {
-    icon: DoorOpen,
-    title: "CHECK-IN",
-    description: "Entrance check-in & ID scanning",
-    path: "/door",
-    RoleIcon: DoorOpen,
-  },
-  {
-    icon: Sofa,
-    title: "VIP ROOM",
-    description: "Private room session tracking",
-    path: "/rooms",
-    RoleIcon: Sofa,
-  },
-  {
-    icon: BarChart3,
-    title: "Admin",
-    description: "Full financials & reporting",
-    path: "/dashboard",
-    RoleIcon: BarChart3,
-  },
-  {
-    icon: Eye,
-    title: "Manager",
-    description: "Live floor & headcount view",
-    path: "/floor",
-    RoleIcon: Eye,
-  },
-];
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Landing() {
   const navigate = useNavigate();
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setLoggedIn(!!data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setLoggedIn(!!s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("demo_role");
+    setLoggedIn(false);
+  };
 
   return (
-    <div className="min-h-screen gradient-dark flex flex-col items-center justify-center px-4 py-12">
-      {/* Background animated gradient */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] animate-[spin_120s_linear_infinite] opacity-[0.03]"
-          style={{
-            background: "conic-gradient(from 0deg, transparent 0%, hsl(46 92% 53%) 10%, transparent 20%)",
-          }}
-        />
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 py-12 overflow-hidden relative">
+      {loggedIn && (
+        <button
+          onClick={handleLogout}
+          className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 border border-gray-200 transition-all"
+        >
+          <LogOut className="w-4 h-4" /> Log out
+        </button>
+      )}
+      {/* Subtle ambient pink glow behind logo */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-96 h-96 rounded-full bg-pink-400 opacity-[0.07] blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex flex-col items-center max-w-4xl w-full">
-        <img src={logo} alt="2NYT Entertainment" className="h-32 md:h-48 w-auto mb-4 animate-fade-in drop-shadow-[0_0_30px_hsl(var(--primary)/0.4)]" />
+      <div className="relative z-10 w-full max-w-3xl">
+        {/* Three-column layout */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-10">
 
-        <p className="text-lg md:text-xl text-muted-foreground mb-16 animate-fade-in" style={{ animationDelay: "0.15s" }}>
-          Venue Intelligence. Built for the Floor.
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
-          {roles.map((role, i) => (
+          {/* LEFT — Dancer */}
+          <div className="flex flex-col items-center gap-4 flex-1 w-full">
+            <span className="text-xs font-bold tracking-[0.25em] text-gray-400 uppercase mb-1">Dancer</span>
             <button
-              key={role.path}
-              onClick={() => navigate(role.path)}
-              className="group relative glass-card p-6 text-left transition-all duration-300 hover:border-primary/50 hover:glow-gold animate-slide-up"
-              style={{ animationDelay: `${0.2 + i * 0.1}s`, opacity: 0 }}
+              onClick={() => navigate("/login?type=dancer")}
+              className="w-full max-w-[220px] py-4 px-6 bg-pink-500 hover:bg-pink-600 active:scale-[0.97] text-white font-bold text-lg rounded-2xl shadow-lg shadow-pink-200 transition-all duration-150"
             >
-              <div className="flex items-start justify-between">
-                <div>
-                  <role.RoleIcon className="w-7 h-7 text-primary mb-2" />
-                  <h3 className="font-heading text-2xl text-foreground tracking-wide mb-1">
-                    {role.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {role.description}
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1 group-hover:translate-x-1 duration-200" />
-              </div>
+              Login
+            </button>
+            <button
+              onClick={() => navigate("/dancer/register")}
+              className="w-full max-w-[220px] py-4 px-6 bg-white hover:bg-pink-50 active:scale-[0.97] text-pink-500 font-bold text-lg rounded-2xl border-2 border-pink-400 shadow-sm transition-all duration-150"
+            >
+              Create a Profile
+            </button>
+          </div>
+
+          {/* CENTER — Animated Logo */}
+          <div className="flex flex-col items-center gap-3 flex-shrink-0">
+            <div className="relative flex items-center justify-center">
+              {/* Pink glow ring — animated pulse */}
+              <div className="absolute w-[220px] h-[220px] rounded-full bg-pink-400 opacity-[0.15] blur-2xl animate-[pulse_3s_ease-in-out_infinite]" />
+              <img
+                src={logo}
+                alt="2NYT Entertainment"
+                className="relative h-40 md:h-52 w-auto opacity-[0.85]"
+                style={{
+                  filter: "drop-shadow(0 0 28px rgba(236, 72, 153, 0.55)) drop-shadow(0 4px 12px rgba(0,0,0,0.12))",
+                  animation: "float 6s ease-in-out infinite",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* RIGHT — Associate (Staff) */}
+          <div className="flex flex-col items-center gap-4 flex-1 w-full">
+            <span className="text-xs font-bold tracking-[0.25em] text-gray-400 uppercase mb-1">Associate</span>
+            <button
+              onClick={() => navigate("/login?type=staff")}
+              className="w-full max-w-[220px] py-4 px-6 bg-gray-900 hover:bg-gray-800 active:scale-[0.97] text-white font-bold text-lg rounded-2xl shadow-lg shadow-gray-200 transition-all duration-150"
+            >
+              Login
+            </button>
+            <button
+              onClick={() => navigate("/register")}
+              className="w-full max-w-[220px] py-4 px-6 bg-white hover:bg-gray-50 active:scale-[0.97] text-gray-900 font-bold text-lg rounded-2xl border-2 border-gray-900 shadow-sm transition-all duration-150"
+            >
+              Create Account
+            </button>
+          </div>
+        </div>
+
+        {/* Dev nav — staff quick access below (hidden in production) */}
+        <div className="mt-16 flex flex-wrap items-center justify-center gap-3 opacity-40 hover:opacity-70 transition-opacity">
+          {[
+            { label: "Door Panel", path: "/door" },
+            { label: "Rooms", path: "/rooms" },
+            { label: "Dashboard", path: "/dashboard" },
+            { label: "Floor View", path: "/floor" },
+            { label: "Reports", path: "/reports" },
+          ].map((item) => (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className="text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 transition-colors"
+            >
+              {item.label}
             </button>
           ))}
         </div>
       </div>
+
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50%       { transform: translateY(-10px); }
+        }
+      `}</style>
     </div>
   );
 }

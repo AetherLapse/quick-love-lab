@@ -701,6 +701,193 @@ export function useGuestCheckIn() {
   return { manualAdd, scanAdd };
 }
 
+// ─── Door: tier-based entry ───────────────────────────────────────────────────
+
+export type EntryTierKey = "full_cover" | "reduced" | "vip" | "ccc_card" | "two_for_one";
+
+const TIER_FEES: Record<EntryTierKey, number> = {
+  full_cover:  10,
+  reduced:     5,
+  vip:         0,
+  ccc_card:    0,
+  two_for_one: 10, // $10 for 2 people
+};
+
+export function useTierEntry() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      tier,
+      loggedBy,
+      distributorId,
+    }: {
+      tier: EntryTierKey;
+      loggedBy: string;
+      distributorId?: string;
+    }) => {
+      const fee = TIER_FEES[tier];
+      const partySize = tier === "two_for_one" ? 2 : 1;
+
+      const { error } = await supabase.from("customer_entries").insert({
+        door_fee:        fee,
+        tier:            tier,
+        party_size:      partySize,
+        distributor_id:  distributorId ?? null,
+        shift_date:      today(),
+        logged_by:       loggedBy,
+      });
+      if (error) throw error;
+      return { fee, partySize };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customer_entries"] });
+      qc.invalidateQueries({ queryKey: ["door_tier_breakdown"] });
+    },
+  });
+}
+
+// ─── Door: today's tier breakdown ────────────────────────────────────────────
+
+export function useTodayTierBreakdown() {
+  return useQuery({
+    queryKey: ["door_tier_breakdown"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("customer_entries")
+        .select("tier, party_size, door_fee")
+        .eq("shift_date", today());
+      if (error) throw error;
+
+      const rows = data ?? [];
+      const tierMap: Record<string, { count: number; revenue: number }> = {};
+
+      rows.forEach((r) => {
+        const t = (r as Record<string, unknown>).tier as string ?? "full_cover";
+        const partySize = (r as Record<string, unknown>).party_size as number ?? 1;
+        if (!tierMap[t]) tierMap[t] = { count: 0, revenue: 0 };
+        tierMap[t].count   += partySize;
+        tierMap[t].revenue += Number(r.door_fee);
+      });
+
+      const breakdown = Object.entries(tierMap).map(([tier, v]) => ({
+        tier,
+        label: tier,
+        count:   v.count,
+        revenue: v.revenue,
+      }));
+
+      const totalRevenue = breakdown.reduce((s, r) => s + r.revenue, 0);
+      const totalGuests  = breakdown.reduce((s, r) => s + r.count,   0);
+
+      return { breakdown, totalRevenue, totalGuests };
+    },
+    refetchInterval: 15_000,
+  });
+}
+
+// ─── Distributors ─────────────────────────────────────────────────────────────
+
+export function useDistributors() {
+  return useQuery({
+    queryKey: ["distributors"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("distributors" as never)
+        .select("id, name, commission_rate")
+        .eq("is_active", true)
+        .order("name");
+      if (error) {
+        // Table may not exist in older envs — return empty
+        console.warn("distributors table not found:", error.message);
+        return [] as { id: string; name: string; commission_rate: number }[];
+      }
+      return (data ?? []) as { id: string; name: string; commission_rate: number }[];
+    },
+  });
+}
+
+// ─── Stage rotation ───────────────────────────────────────────────────────────
+
+export function useStageRotation() {
+  return useQuery({
+    queryKey: ["stage_rotation"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("stage_rotation" as never)
+        .select("dancer_id, slot_label, slot_order")
+        .eq("shift_date", today())
+        .order("slot_order");
+      if (error) {
+        console.warn("stage_rotation table not found:", error.message);
+        return [] as { dancer_id: string; slot_label: string; slot_order: number }[];
+      }
+      return (data ?? []) as { dancer_id: string; slot_label: string; slot_order: number }[];
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+// ─── Dancer shift fees ────────────────────────────────────────────────────────
+
+export function useDancerShiftFees(shiftDate: string) {
+  return useQuery({
+    queryKey: ["dancer_shift_fees", shiftDate],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("dancer_shift_fees" as never)
+        .select("*, dancers(stage_name, full_name, outstanding_balance)")
+        .eq("shift_date", shiftDate)
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.warn("dancer_shift_fees not found:", error.message);
+        return [];
+      }
+      return (data ?? []) as Array<{
+        id: string;
+        dancer_id: string;
+        shift_date: string;
+        house_fee: number;
+        music_fee: number;
+        late_fee: number;
+        is_late: boolean;
+        dance_earnings: number;
+        carry_forward_in: number;
+        is_settled: boolean;
+        dancers: { stage_name: string; full_name: string | null; outstanding_balance: number } | null;
+      }>;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+export function useUpdateStageRotation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dancerId,
+      slotLabel,
+      slotOrder,
+    }: {
+      dancerId: string;
+      slotLabel: string;
+      slotOrder: number;
+    }) => {
+      const { error } = await supabase
+        .from("stage_rotation" as never)
+        .upsert({
+          dancer_id:  dancerId,
+          slot_label: slotLabel,
+          slot_order: slotOrder,
+          shift_date: today(),
+          updated_at: new Date().toISOString(),
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stage_rotation"] }),
+  });
+}
+
 export function useUpdateGuest() {
   const qc = useQueryClient();
   return useMutation({

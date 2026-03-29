@@ -91,24 +91,42 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* Dev nav — staff quick access below (hidden in production) */}
-        <div className="mt-16 flex flex-wrap items-center justify-center gap-3 opacity-40 hover:opacity-70 transition-opacity">
-          {[
-            { label: "Door Panel", path: "/door" },
-            { label: "Rooms", path: "/rooms" },
-            { label: "Dashboard", path: "/dashboard" },
-            { label: "Floor View", path: "/floor" },
-            { label: "Reports", path: "/reports" },
-          ].map((item) => (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className="text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 transition-colors"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {/* Role-based quick nav — only shown when logged in */}
+        {loggedIn && (() => {
+          const role = localStorage.getItem("demo_role");
+          const navItems: { label: string; path: string }[] = [];
+
+          if (["owner", "admin", "manager"].includes(role ?? "")) {
+            navItems.push({ label: "Dashboard",  path: "/dashboard" });
+            navItems.push({ label: "Floor View", path: "/floor" });
+          }
+          if (["owner", "admin", "manager", "door_staff"].includes(role ?? "")) {
+            navItems.push({ label: "Door Panel", path: "/door" });
+            navItems.push({ label: "Reports",    path: "/reports" });
+          }
+          if (["owner", "admin", "manager", "door_staff", "room_attendant", "house_mom"].includes(role ?? "")) {
+            navItems.push({ label: "Rooms", path: "/rooms" });
+          }
+          if (["owner", "admin"].includes(role ?? "")) {
+            navItems.push({ label: "Settings", path: "/settings" });
+          }
+
+          if (navItems.length === 0) return null;
+
+          return (
+            <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
+              {navItems.map((item) => (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className="px-5 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all shadow-sm"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <style>{`

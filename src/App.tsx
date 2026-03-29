@@ -11,6 +11,7 @@ import PrivateRooms from "./pages/PrivateRooms";
 import FloorView from "./pages/FloorView";
 import ClubSettings from "./pages/ClubSettings";
 import Reports from "./pages/Reports";
+import StaffHome from "./pages/StaffHome";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import RoleGuard from "./components/DemoLogin";
@@ -68,6 +69,13 @@ const App = () => (
             <Route path="/settings" element={
               <RoleGuard allowedRoles={["owner", "admin"]}>
                 <ClubSettings />
+              </RoleGuard>
+            } />
+
+            {/* Staff Home — all staff roles */}
+            <Route path="/staff-home" element={
+              <RoleGuard allowedRoles={["owner", "admin", "manager", "door_staff", "room_attendant", "house_mom"]}>
+                <StaffHome />
               </RoleGuard>
             } />
 

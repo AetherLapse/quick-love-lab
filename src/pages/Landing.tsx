@@ -77,7 +77,7 @@ export default function Landing() {
           <div className="flex flex-col items-center gap-4 flex-1 w-full">
             <span className="text-xs font-bold tracking-[0.25em] text-gray-400 uppercase mb-1">Associate</span>
             <button
-              onClick={() => navigate("/login?type=staff")}
+              onClick={() => navigate("/staff-home")}
               className="w-full max-w-[220px] py-4 px-6 bg-gray-900 hover:bg-gray-800 active:scale-[0.97] text-white font-bold text-lg rounded-2xl shadow-lg shadow-gray-200 transition-all duration-150"
             >
               Login

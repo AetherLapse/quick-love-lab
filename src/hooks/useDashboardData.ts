@@ -11,7 +11,13 @@ export function getDateRange(period: Period, custom?: CustomRange): CustomRange 
   if (period === "Custom" && custom?.start && custom?.end) return custom;
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
-  if (period === "Today") return { start: todayStr, end: todayStr };
+  if (period === "Today" || period === "Tonight") return { start: todayStr, end: todayStr };
+  if (period === "Last Night") {
+    const d = new Date(now);
+    d.setDate(now.getDate() - 1);
+    const yest = d.toISOString().split("T")[0];
+    return { start: yest, end: yest };
+  }
   if (period === "This Week") {
     const d = new Date(now);
     d.setDate(now.getDate() - now.getDay());
@@ -699,6 +705,156 @@ export function useGuestCheckIn() {
   });
 
   return { manualAdd, scanAdd };
+}
+
+// ─── Dance tiers ─────────────────────────────────────────────────────────────
+
+export interface DanceTier {
+  id: string;
+  name: string;
+  price: number;
+  duration_minutes: number | null;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export function useDanceTiers() {
+  return useQuery({
+    queryKey: ["dance_tiers"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("dance_tiers")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as DanceTier[];
+    },
+  });
+}
+
+export function useLogDanceSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dancerId,
+      tierId,
+      totalAmount,
+      durationMinutes,
+      customerCount = 1,
+      notes,
+    }: {
+      dancerId: string;
+      tierId: string;
+      totalAmount: number;
+      durationMinutes?: number;
+      customerCount?: number;
+      notes?: string;
+    }) => {
+      // Use RPC to bypass PostgREST schema cache issues on new tables
+      const { error } = await supabase.rpc("log_dance_session" as any, {
+        p_dancer_id:    dancerId,
+        p_tier_id:      tierId,
+        p_total_amount: totalAmount,
+        p_duration_min: durationMinutes ?? null,
+        p_notes:        notes ?? null,
+      } as any);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dance_sessions"] });
+      qc.invalidateQueries({ queryKey: ["attendance_log"] });
+    },
+  });
+}
+
+export function useDanceSessionsToday() {
+  const todayStr = today();
+  return useQuery({
+    queryKey: ["dance_sessions", todayStr],
+    queryFn: async () => {
+      const start = `${todayStr}T00:00:00`;
+      const end   = `${todayStr}T23:59:59`;
+      const { data, error } = await (supabase as any)
+        .from("dance_sessions")
+        .select("*, dancers(stage_name), dance_tiers(name, price)")
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        dancer_id: string;
+        tier_id: string;
+        total_amount: number;
+        duration_minutes: number | null;
+        customer_count: number;
+        completed_at: string;
+        dancers: { stage_name: string } | null;
+        dance_tiers: { name: string; price: number } | null;
+      }>;
+    },
+    refetchInterval: 15000,
+  });
+}
+
+// ─── Entry tiers + today's door status ───────────────────────────────────────
+
+export function useEntryTiers() {
+  return useQuery({
+    queryKey: ["entry_tiers"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("entry_tiers").select("*").order("price", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string; price: number; admits_count: number; requires_distributor: boolean; is_active: boolean }[];
+    },
+  });
+}
+
+export function useDoorStatusToday() {
+  const todayStr = today();
+  const guestVisits  = useGuestVisits(todayStr, todayStr);
+  const customerEntries = useCustomerEntries(todayStr, todayStr);
+  const tiers = useEntryTiers();
+
+  const rows = useMemo(() => {
+    const gv = guestVisits.data ?? [];
+    const ce = customerEntries.data ?? [];
+    const allVisits = [...gv.map(v => Number(v.door_fee)), ...ce.map(v => Number(v.door_fee))];
+    const tierList = tiers.data ?? [];
+
+    // Group visits by fee amount
+    const countByFee: Record<number, number> = {};
+    allVisits.forEach(fee => { countByFee[fee] = (countByFee[fee] ?? 0) + 1; });
+
+    // Map tiers to rows
+    // Tiers with the same price share the pool (split evenly for display)
+    const feeGroups: Record<number, typeof tierList> = {};
+    tierList.filter(t => t.is_active).forEach(t => {
+      if (!feeGroups[t.price]) feeGroups[t.price] = [];
+      feeGroups[t.price].push(t);
+    });
+
+    const result: { id: string; name: string; price: number; guestCount: number; revenue: number }[] = [];
+    tierList.filter(t => t.is_active).forEach(tier => {
+      const siblings = feeGroups[tier.price] ?? [tier];
+      const totalForFee = countByFee[tier.price] ?? 0;
+      const share = siblings.length > 1 ? Math.round(totalForFee / siblings.length) : totalForFee;
+      result.push({ id: tier.id, name: tier.name, price: tier.price, guestCount: share, revenue: share * tier.price });
+    });
+
+    return result;
+  }, [guestVisits.data, customerEntries.data, tiers.data]);
+
+  const totalGuests  = rows.reduce((s, r) => s + r.guestCount, 0);
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+
+  return {
+    rows,
+    totalGuests,
+    totalRevenue,
+    isLoading: guestVisits.isLoading || customerEntries.isLoading || tiers.isLoading,
+  };
 }
 
 export function useUpdateGuest() {

@@ -1,82 +1,92 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, DoorOpen, Sofa, BarChart3, Eye } from "lucide-react";
+import { UserRound, ShieldCheck, ScanFace, LogIn, UserPlus } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
-
-const roles = [
-  {
-    icon: DoorOpen,
-    title: "CHECK-IN",
-    description: "Entrance check-in & ID scanning",
-    path: "/door",
-    RoleIcon: DoorOpen,
-  },
-  {
-    icon: Sofa,
-    title: "VIP ROOM",
-    description: "Private room session tracking",
-    path: "/rooms",
-    RoleIcon: Sofa,
-  },
-  {
-    icon: BarChart3,
-    title: "Admin",
-    description: "Full financials & reporting",
-    path: "/dashboard",
-    RoleIcon: BarChart3,
-  },
-  {
-    icon: Eye,
-    title: "Manager",
-    description: "Live floor & headcount view",
-    path: "/floor",
-    RoleIcon: Eye,
-  },
-];
 
 export default function Landing() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen gradient-dark flex flex-col items-center justify-center px-4 py-12">
-      {/* Background animated gradient */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] animate-[spin_120s_linear_infinite] opacity-[0.03]"
-          style={{
-            background: "conic-gradient(from 0deg, transparent 0%, hsl(46 92% 53%) 10%, transparent 20%)",
-          }}
-        />
-      </div>
+    <div
+      className="min-h-screen flex items-center justify-center px-6 py-12"
+      style={{
+        background:
+          "radial-gradient(ellipse 80% 60% at 50% -10%, hsl(328 78% 90% / 0.45) 0%, hsl(0 0% 100%) 70%)",
+      }}
+    >
+      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 items-center gap-8 md:gap-4">
 
-      <div className="relative z-10 flex flex-col items-center max-w-4xl w-full">
-        <img src={logo} alt="2NYT Entertainment" className="h-32 md:h-48 w-auto mb-4 animate-fade-in drop-shadow-[0_0_30px_hsl(var(--primary)/0.4)]" />
+        {/* ── LEFT: Dancers ── */}
+        <div className="flex flex-col items-center md:items-start gap-3">
+          <div className="flex items-center gap-2 mb-1">
+            <UserRound className="w-5 h-5 text-primary" />
+            <span className="text-base font-semibold text-foreground">Dancers</span>
+          </div>
 
-        <p className="text-lg md:text-xl text-muted-foreground mb-16 animate-fade-in" style={{ animationDelay: "0.15s" }}>
-          Venue Intelligence. Built for the Floor.
-        </p>
+          <button
+            onClick={() => navigate("/login?role=dancer")}
+            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
+          >
+            <LogIn className="w-4 h-4" />
+            Login
+          </button>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
-          {roles.map((role, i) => (
-            <button
-              key={role.path}
-              onClick={() => navigate(role.path)}
-              className="group relative glass-card p-6 text-left transition-all duration-300 hover:border-primary/50 hover:glow-gold animate-slide-up"
-              style={{ animationDelay: `${0.2 + i * 0.1}s`, opacity: 0 }}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <role.RoleIcon className="w-7 h-7 text-primary mb-2" />
-                  <h3 className="font-heading text-2xl text-foreground tracking-wide mb-1">
-                    {role.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {role.description}
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1 group-hover:translate-x-1 duration-200" />
-              </div>
-            </button>
-          ))}
+          <button
+            onClick={() => navigate("/dancer-register")}
+            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white text-sm font-medium transition-all hover:opacity-90 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            Create a Profile
+          </button>
+
+          <button
+            onClick={() => navigate("/face-scan")}
+            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
+          >
+            <ScanFace className="w-4 h-4" />
+            Face Scan
+          </button>
         </div>
+
+        {/* ── CENTER: Logo ── */}
+        <div className="flex flex-col items-center text-center order-first md:order-none">
+          <img
+            src={logo}
+            alt="2NYT Entertainment"
+            className="h-36 md:h-44 w-auto drop-shadow-md mb-5"
+          />
+          <h1 className="text-2xl md:text-3xl font-bold leading-tight">
+            <span className="text-foreground">2NYT </span>
+            <span className="text-primary">Venue<br />Intelligence</span>
+          </h1>
+          <p className="text-sm text-primary/70 mt-1 tracking-wide">
+            Built from the Floor Up!
+          </p>
+        </div>
+
+        {/* ── RIGHT: Associates ── */}
+        <div className="flex flex-col items-center md:items-end gap-3">
+          <div className="flex items-center gap-2 mb-1">
+            <ShieldCheck className="w-5 h-5 text-primary" />
+            <span className="text-base font-semibold text-foreground">Associates</span>
+          </div>
+
+          <button
+            onClick={() => navigate("/login?role=staff")}
+            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
+          >
+            <LogIn className="w-4 h-4" />
+            Login
+          </button>
+
+          <button
+            onClick={() => navigate("/register")}
+            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white text-sm font-medium transition-all hover:opacity-90 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            Create Account
+          </button>
+        </div>
+
       </div>
     </div>
   );

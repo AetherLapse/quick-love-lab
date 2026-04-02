@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Download, FileText, Users, BarChart3, DoorOpen } from "lucide-react";
+import { Download, FileText, Users, BarChart3, DoorOpen, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { DateFilter } from "./DateFilter";
 import { type Period } from "./mockData";
@@ -7,6 +7,7 @@ import {
   useRoomSessions, useGuestVisits, useAttendanceLogs, useDancers,
   getDateRange, today,
 } from "@/hooks/useDashboardData";
+import { useAuth } from "@/hooks/useAuth";
 
 // ─── CSV helper ───────────────────────────────────────────────────────────────
 function downloadCSV(filename: string, headers: string[], rows: (string | number)[][][]) {
@@ -30,9 +31,21 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+type ReportType = "dancer" | "door" | "full";
+
+const REPORT_TYPES: { id: ReportType; label: string; ownerOnly: boolean }[] = [
+  { id: "dancer", label: "Run Dancer Report",  ownerOnly: false },
+  { id: "door",   label: "Run Door Report",    ownerOnly: false },
+  { id: "full",   label: "Run Full Report",    ownerOnly: true  },
+];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function ReportsTab() {
-  const [period, setPeriod] = useState<Period>("Today");
+  const { role } = useAuth();
+  const isOwner = role === "owner" || role === "admin";
+
+  const [reportType, setReportType] = useState<ReportType>("dancer");
+  const [period, setPeriod] = useState<Period>("Tonight");
   const [customRange, setCustomRange] = useState({ start: today(), end: today() });
   const { start, end } = getDateRange(period, customRange);
   const dateLabel = start === end ? start : `${start} → ${end}`;
@@ -183,8 +196,33 @@ ${line}`;
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h2 className="font-heading text-3xl tracking-wide">Reports & Exports</h2>
+        <h2 className="text-xl font-bold text-foreground">Reports</h2>
         <DateFilter activePeriod={period} setActivePeriod={setPeriod} customRange={customRange} setCustomRange={setCustomRange} />
+      </div>
+
+      {/* Report type selector */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {REPORT_TYPES.map(rt => {
+          const locked = rt.ownerOnly && !isOwner;
+          return (
+            <button
+              key={rt.id}
+              disabled={locked}
+              onClick={() => !locked && setReportType(rt.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-medium transition-all
+                ${reportType === rt.id && !locked
+                  ? "border-primary bg-primary text-white"
+                  : locked
+                    ? "border-border bg-secondary text-muted-foreground opacity-50 cursor-not-allowed"
+                    : "border-border bg-white hover:border-primary/60 text-foreground"
+                }`}
+            >
+              {locked && <Lock className="w-3.5 h-3.5" />}
+              {rt.label}
+              {rt.ownerOnly && <span className="text-[10px] opacity-70">(Owner)</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* KPI summary row */}

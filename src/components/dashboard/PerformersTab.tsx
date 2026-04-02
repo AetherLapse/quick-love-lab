@@ -1,304 +1,239 @@
 import { useState, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Crown, X, AlertCircle, Check, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { type Period } from "./mockData";
-import { useCountUp } from "./useCountUp";
 import { DateFilter } from "./DateFilter";
-import { useDancerPerformance, today } from "@/hooks/useDashboardData";
+import { useDancerPerformance, useDancers, today } from "@/hooks/useDashboardData";
 
-const chartTooltipStyle = {
-  backgroundColor: "hsl(240 15% 10%)",
-  border: "1px solid hsl(240 12% 16%)",
-  borderRadius: "8px",
-  color: "white",
-};
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-type SortCol = "name" | "sessions" | "gross" | "houseCut" | "netPayout";
+const MUSIC_FEE = 20; // fixed music fee per night
 
-function KPIStrip({ label, value, animKey }: { label: string; value: number | string; animKey: string }) {
-  const num = typeof value === "number" ? value : 0;
-  const animated = useCountUp(num, 1000, animKey);
-  return (
-    <div className="glass-card p-4 text-center">
-      <p className="text-muted-foreground text-xs mb-1">{label}</p>
-      <p className="font-heading text-2xl tracking-wide text-foreground">
-        {typeof value === "number" ? animated.toLocaleString() : value}
-      </p>
-    </div>
-  );
+// ─── Dancer financial card ────────────────────────────────────────────────────
+
+interface DancerCardProps {
+  name: string;
+  checkIn: string | null;
+  isLate: boolean;
+  houseFee: number;
+  danceRevenue: number;
+  outstandingBalance: number;   // carried over from previous nights
+  sessions: { time: string; songs: number; amount: number }[];
 }
 
-export function PerformersTab() {
-  const [activePeriod, setActivePeriod] = useState<Period>("Today");
-  const [customRange, setCustomRange] = useState({ start: today(), end: today() });
-  const [sortCol, setSortCol] = useState<SortCol>("sessions");
-  const [sortAsc, setSortAsc] = useState(false);
-  const [drawerDancer, setDrawerDancer] = useState<string | null>(null);
+function DancerCard({ name, checkIn, isLate, houseFee, danceRevenue, outstandingBalance, sessions }: DancerCardProps) {
+  const [open, setOpen] = useState(false);
 
-  const { performance: dancers, isLoading } = useDancerPerformance(activePeriod, customRange);
+  const lateFee      = isLate ? 10 : 0;
+  const effectiveHouseFee = houseFee + lateFee; // late bumps house fee from 30→50 but stored separately
+  const totalFees    = effectiveHouseFee + MUSIC_FEE;
+  const netPayout    = danceRevenue - totalFees;
+  const owes         = Math.max(0, -netPayout) + outstandingBalance;
+  const toPay        = Math.max(0, netPayout);
 
-  const sortedDancers = useMemo(() => {
-    return [...dancers].sort((a, b) => {
-      const av = a[sortCol as keyof typeof a] as number | string;
-      const bv = b[sortCol as keyof typeof b] as number | string;
-      if (typeof av === "number" && typeof bv === "number") return sortAsc ? av - bv : bv - av;
-      return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-    });
-  }, [dancers, sortCol, sortAsc]);
-
-  const toggleSort = (col: SortCol) => {
-    if (sortCol === col) setSortAsc(!sortAsc);
-    else { setSortCol(col); setSortAsc(false); }
-  };
-
-  const totals = useMemo(() => {
-    return dancers.reduce((acc, d) => ({
-      sessions: acc.sessions + d.sessions,
-      gross: acc.gross + d.gross,
-      houseCut: acc.houseCut + d.houseCut,
-      houseFee: acc.houseFee + d.houseFee,
-      netPayout: acc.netPayout + d.netPayout,
-    }), { sessions: 0, gross: 0, houseCut: 0, houseFee: 0, netPayout: 0 });
-  }, [dancers]);
-
-  const topPerformers = dancers.slice(0, 3).map((d, i) => ({ rank: i + 1, ...d }));
-
-  const comparisonData = [...dancers]
-    .sort((a, b) => b.gross - a.gross)
-    .map(d => ({ name: d.name, houseCut: d.houseCut, dancerCut: d.gross - d.houseCut }));
-
-  const selectedDancer = drawerDancer ? dancers.find(d => d.id === drawerDancer) : null;
+  const paid   = owes === 0;
+  const status = paid ? "paid" : "owes";
 
   return (
-    <div className="relative">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h2 className="font-heading text-3xl tracking-wide">Performer Analytics</h2>
-        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
-      </div>
+    <div className={`bg-white rounded-2xl border-2 shadow-sm transition-all ${
+      status === "owes" ? "border-red-200" : "border-green-200"
+    }`}>
+      {/* Header row */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-4 px-5 py-4 text-left"
+      >
+        {/* Status dot */}
+        <span className={`w-3 h-3 rounded-full shrink-0 ${status === "paid" ? "bg-green-500" : "bg-red-500"}`} />
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        {/* Name + time */}
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-foreground text-base leading-none">{name}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Arrival: {checkIn ?? "—"}
+            {isLate && <span className="ml-2 text-orange-500 font-semibold">LATE +$10</span>}
+            {outstandingBalance > 0 && (
+              <span className="ml-2 text-red-500 font-semibold">Owes ${outstandingBalance} from prev.</span>
+            )}
+          </p>
         </div>
-      ) : dancers.length === 0 ? (
-        <div className="glass-card p-12 text-center text-muted-foreground mb-8">
-          No performer data for this period yet.
-        </div>
-      ) : (
-        <>
-          {/* KPI Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <KPIStrip label="Active Tonight" value={dancers.filter(d => d.active).length} animKey={activePeriod + "at"} />
-            <KPIStrip label="Total Sessions" value={totals.sessions} animKey={activePeriod + "ts"} />
-            <KPIStrip label="Total Earned (Dancers)" value={totals.gross - totals.houseCut} animKey={activePeriod + "te"} />
-            <KPIStrip label="Avg Per Dancer" value={dancers.length > 0 ? Math.round((totals.gross - totals.houseCut) / dancers.length) : 0} animKey={activePeriod + "ap"} />
-          </div>
 
-          {/* Podium */}
-          {topPerformers.length >= 3 && (
-            <div className="glass-card p-6 mb-8">
-              <h3 className="font-heading text-2xl tracking-wide mb-6 flex items-center gap-2">
-                <Crown className="w-5 h-5 text-primary" /> Top Performers
-              </h3>
-              <div className="flex items-end justify-center gap-4">
-                {[topPerformers[1], topPerformers[0], topPerformers[2]].map((p) => (
-                  <div
-                    key={p.rank}
-                    className={`glass-card p-4 text-center transition-all ${
-                      p.rank === 1 ? "w-44 pb-6 border-primary/40 glow-gold" : "w-36"
-                    }`}
-                    style={{ minHeight: p.rank === 1 ? 200 : p.rank === 2 ? 160 : 140 }}
-                  >
-                    {p.rank === 1 && <Crown className="w-7 h-7 text-primary mx-auto mb-1 animate-pulse" />}
-                    <p className="text-2xl mb-1 font-heading text-primary">#{p.rank}</p>
-                    <p className="font-heading text-xl">{p.name}</p>
-                    <p className="text-muted-foreground text-xs">{p.sessions} sessions</p>
-                    <p className="text-primary font-heading text-xl">${p.gross}</p>
-                    <p className="text-xs text-muted-foreground">Payout: ${p.netPayout}</p>
+        {/* Summary */}
+        <div className="text-right shrink-0">
+          {status === "paid" ? (
+            <div>
+              <p className="text-xs text-muted-foreground">Pay Dancer</p>
+              <p className="font-bold text-green-600 text-lg">${toPay}</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground">Dancer Owes</p>
+              <p className="font-bold text-red-500 text-lg">${owes}</p>
+            </div>
+          )}
+        </div>
+
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+      </button>
+
+      {/* Expanded detail */}
+      {open && (
+        <div className="border-t border-border/50 px-5 py-4 space-y-4">
+          {/* Sessions */}
+          {sessions.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2">Dances</p>
+              <div className="space-y-1">
+                {sessions.map((s, i) => (
+                  <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-border/30 last:border-0">
+                    <span className="text-muted-foreground w-14">{s.time}</span>
+                    <span className="flex-1 text-foreground">{s.songs} song{s.songs !== 1 ? "s" : ""}</span>
+                    <span className="font-semibold text-foreground">${s.amount}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Full Table */}
-          <div className="glass-card p-6 mb-8">
-            <h3 className="font-heading text-2xl tracking-wide mb-4">Full Performer Breakdown</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-3 px-2 text-left font-medium">#</th>
-                    {[
-                      { key: "name" as SortCol, label: "Dancer", align: "text-left" },
-                      { key: null, label: "Status", align: "text-center" },
-                      { key: null, label: "Check-In", align: "text-left" },
-                      { key: null, label: "Check-Out", align: "text-left" },
-                      { key: "sessions" as SortCol, label: "Sessions", align: "text-center" },
-                      { key: "gross" as SortCol, label: "Gross", align: "text-right" },
-                      { key: "houseCut" as SortCol, label: "House Cut", align: "text-right" },
-                      { key: null, label: "House Fee", align: "text-right" },
-                      { key: "netPayout" as SortCol, label: "Net Payout", align: "text-right" },
-                      { key: null, label: "Action", align: "text-center" },
-                    ].map((col, i) => (
-                      <th
-                        key={i}
-                        className={`py-3 px-2 font-medium ${col.align} ${col.key ? "cursor-pointer hover:text-foreground transition-colors" : ""}`}
-                        onClick={col.key ? () => toggleSort(col.key as SortCol) : undefined}
-                      >
-                        {col.label}
-                        {col.key && sortCol === col.key && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedDancers.map((d, i) => (
-                    <tr key={d.id} className="border-b border-border/30 hover:bg-primary/5 transition-colors">
-                      <td className="py-3 px-2 text-muted-foreground">{i + 1}</td>
-                      <td className="py-3 px-2 font-medium text-foreground">{d.name}</td>
-                      <td className="py-3 px-2 text-center">
-                        {d.active ? (
-                          <span className="inline-flex items-center gap-1 text-success text-xs font-medium">
-                            <span className="w-2 h-2 rounded-full bg-success animate-pulse-glow" /> Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                            <span className="w-2 h-2 rounded-full bg-muted-foreground" /> Left
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-2 text-muted-foreground">{d.checkIn ?? "—"}</td>
-                      <td className="py-3 px-2 text-muted-foreground">{d.checkOut ?? "—"}</td>
-                      <td className="py-3 px-2 text-center">{d.sessions}</td>
-                      <td className="py-3 px-2 text-right text-foreground">${d.gross}</td>
-                      <td className="py-3 px-2 text-right text-primary">${d.houseCut}</td>
-                      <td className="py-3 px-2 text-right text-muted-foreground">${d.houseFee}</td>
-                      <td className={`py-3 px-2 text-right font-semibold ${d.netPayout < 0 ? "text-destructive" : "text-foreground"}`}>
-                        ${d.netPayout}
-                        {d.netPayout < 0 && <AlertCircle className="w-3.5 h-3.5 text-destructive inline ml-1" />}
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        <button
-                          onClick={() => setDrawerDancer(d.id)}
-                          className="px-3 py-1 rounded-lg text-xs border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="border-t-2 border-border font-bold">
-                    <td className="py-3 px-2" /><td className="py-3 px-2 text-foreground">TOTAL</td>
-                    <td className="py-3 px-2" /><td className="py-3 px-2" /><td className="py-3 px-2" />
-                    <td className="py-3 px-2 text-center">{totals.sessions}</td>
-                    <td className="py-3 px-2 text-right text-foreground">${totals.gross.toLocaleString()}</td>
-                    <td className="py-3 px-2 text-right text-primary">${totals.houseCut.toLocaleString()}</td>
-                    <td className="py-3 px-2 text-right text-muted-foreground">${totals.houseFee.toLocaleString()}</td>
-                    <td className="py-3 px-2 text-right text-foreground">${totals.netPayout.toLocaleString()}</td>
-                    <td className="py-3 px-2" />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Financial breakdown */}
+          <div className="bg-secondary/40 rounded-xl p-4 space-y-2 text-sm">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2">Detailed Report</p>
 
-          {/* Comparison Chart */}
-          <div className="glass-card p-6 mb-8">
-            <h3 className="font-heading text-2xl tracking-wide mb-4">Performer Comparison</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={comparisonData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 12% 16%)" />
-                <XAxis type="number" stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="name" stroke="hsl(240 8% 45%)" tick={{ fontSize: 12 }} width={90} />
-                <Tooltip contentStyle={chartTooltipStyle}
-                  formatter={(value: number, name: string) => [`$${value.toLocaleString()}`, name === "houseCut" ? "House Cut" : "Dancer Cut"]}
-                />
-                <Bar dataKey="houseCut" stackId="a" fill="hsl(46 92% 53% / 0.7)" name="houseCut" />
-                <Bar dataKey="dancerCut" stackId="a" fill="hsl(0 0% 70%)" name="dancerCut" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">House Fee</span>
+              <span className="text-foreground font-medium">${effectiveHouseFee}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Music Fee</span>
+              <span className="text-foreground font-medium">${MUSIC_FEE}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Dances</span>
+              <span className="text-foreground font-medium">${danceRevenue}</span>
+            </div>
+
+            <div className="border-t border-border pt-2 space-y-2">
+              <div className="flex justify-between font-semibold">
+                <span className="text-foreground">Total to Pay Dancer</span>
+                <span className={`text-base px-2 py-0.5 rounded-lg ${toPay > 0 ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"}`}>
+                  ${toPay}
+                </span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span className="text-foreground">Total Dancer Owes</span>
+                <span className={`text-base px-2 py-0.5 rounded-lg ${owes > 0 ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"}`}>
+                  ${owes}
+                </span>
+              </div>
+            </div>
+
+            {owes > 0 && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3 mt-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-600">
+                  Balance carries forward. Dancer will be notified at next login.
+                </p>
+              </div>
+            )}
           </div>
-        </>
+        </div>
       )}
+    </div>
+  );
+}
 
-      {/* Dancer Detail Drawer */}
-      {drawerDancer && selectedDancer && (
-        <>
-          <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40" onClick={() => setDrawerDancer(null)} />
-          <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-card border-l border-border z-50 overflow-y-auto animate-slide-in-right">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-heading text-3xl tracking-wide">{selectedDancer.name}</h3>
-                <button onClick={() => setDrawerDancer(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+// ─── Main tab ─────────────────────────────────────────────────────────────────
 
-              <div className="space-y-3 mb-6">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Status</span>
-                  <span className={selectedDancer.active ? "text-success" : "text-muted-foreground"}>
-                    <span className="inline-flex items-center gap-1">
-                      <span className={`w-2 h-2 rounded-full ${selectedDancer.active ? "bg-success" : "bg-muted-foreground"}`} />
-                      {selectedDancer.active ? "Active" : "Left"}
-                    </span>
-                  </span>
-                </div>
-                {selectedDancer.checkIn && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Check-In</span>
-                    <span className="text-foreground">{selectedDancer.checkIn}</span>
-                  </div>
-                )}
-                {selectedDancer.checkOut && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Check-Out</span>
-                    <span className="text-foreground">{selectedDancer.checkOut}</span>
-                  </div>
-                )}
-              </div>
+export function PerformersTab() {
+  const [activePeriod, setActivePeriod] = useState<Period>("Today");
+  const [customRange, setCustomRange]   = useState({ start: today(), end: today() });
 
-              <div className="glass-card p-4 mb-6">
-                <h4 className="font-heading text-lg tracking-wide mb-3">Sessions Tonight</h4>
-                {selectedDancer.sessionDetails.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">No sessions yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {selectedDancer.sessionDetails.map((s, i) => (
-                      <div key={i} className="flex justify-between text-sm border-b border-border/30 pb-2">
-                        <span className="text-muted-foreground">{s.time}</span>
-                        <span className="text-foreground">{s.songs} Song{s.songs > 1 ? "s" : ""}</span>
-                        <span className="text-primary font-medium">${s.amount}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+  const { performance: dancers, isLoading } = useDancerPerformance(activePeriod, customRange);
+  const { data: allDancers = [] } = useDancers();
 
-              <div className="glass-card p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Gross</span>
-                  <span className="text-foreground">${selectedDancer.gross}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">House Cut</span>
-                  <span className="text-primary">${selectedDancer.houseCut}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">House Fee</span>
-                  <span className="text-foreground">${selectedDancer.houseFee}</span>
-                </div>
-                <div className="flex justify-between text-sm font-bold border-t border-border pt-2">
-                  <span className="text-foreground">Net Payout</span>
-                  <span className={selectedDancer.netPayout < 0 ? "text-destructive" : "text-success"}>
-                    ${selectedDancer.netPayout} {selectedDancer.netPayout >= 0 ? <Check className="w-4 h-4 inline" /> : <AlertCircle className="w-4 h-4 inline" />}
-                  </span>
-                </div>
-              </div>
-            </div>
+  const enriched = useMemo(() => {
+    return dancers.map(d => {
+      const rawDancer = allDancers.find(r => r.id === d.id);
+      // Detect "late": check if clock_in is after 8:30pm (configurable in future)
+      const isLate = (() => {
+        if (!d.checkIn) return false;
+        const t = new Date(`1970-01-01 ${d.checkIn}`);
+        return t.getHours() >= 20 && t.getMinutes() >= 30;
+      })();
+      return {
+        ...d,
+        isLate,
+        outstandingBalance: Number((rawDancer as any)?.outstanding_balance ?? 0),
+        houseFee: isLate
+          ? Number((rawDancer as any)?.late_house_fee_rate ?? 50)
+          : Number((rawDancer as any)?.house_fee_rate ?? 30),
+      };
+    });
+  }, [dancers, allDancers]);
+
+  // Totals
+  const totals = useMemo(() => enriched.reduce((acc, d) => ({
+    dancers: acc.dancers + 1,
+    sessions: acc.sessions + d.sessions,
+    gross: acc.gross + d.gross,
+    toPay: acc.toPay + Math.max(0, d.gross - (d.houseFee + MUSIC_FEE)),
+    owes: acc.owes + Math.max(0, (d.houseFee + MUSIC_FEE) - d.gross),
+  }), { dancers: 0, sessions: 0, gross: 0, toPay: 0, owes: 0 }), [enriched]);
+
+  return (
+    <div className="space-y-4">
+      {/* Header + filter */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Dancer Financials</h2>
+          <p className="text-sm text-muted-foreground">Per-dancer breakdown — fees, dances & payouts</p>
+        </div>
+        <DateFilter
+          activePeriod={activePeriod}
+          setActivePeriod={setActivePeriod}
+          customRange={customRange}
+          setCustomRange={setCustomRange}
+        />
+      </div>
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Dancers",        value: totals.dancers,  prefix: ""  },
+          { label: "Total Sessions", value: totals.sessions, prefix: ""  },
+          { label: "Dance Gross",    value: totals.gross,    prefix: "$" },
+          { label: "Total Payouts",  value: totals.toPay,    prefix: "$" },
+        ].map(k => (
+          <div key={k.label} className="bg-white rounded-xl border border-border px-4 py-3 shadow-sm">
+            <p className="text-xs text-muted-foreground mb-0.5">{k.label}</p>
+            <p className="text-xl font-bold text-foreground">{k.prefix}{k.value.toLocaleString()}</p>
           </div>
-        </>
+        ))}
+      </div>
+
+      {/* Dancer cards */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : enriched.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-border p-12 text-center text-muted-foreground">
+          No dancer data for this period.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {enriched.map(d => (
+            <DancerCard
+              key={d.id}
+              name={d.name}
+              checkIn={d.checkIn}
+              isLate={d.isLate}
+              houseFee={d.houseFee}
+              danceRevenue={d.gross}
+              outstandingBalance={d.outstandingBalance}
+              sessions={d.sessionDetails}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

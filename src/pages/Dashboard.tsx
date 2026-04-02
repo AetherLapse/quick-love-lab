@@ -1,67 +1,71 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import logo from "@/assets/logo-2nyt.png";
+import { Clock } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
 import { SummaryTab } from "@/components/dashboard/SummaryTab";
 import { RevenueTab } from "@/components/dashboard/RevenueTab";
 import { PerformersTab } from "@/components/dashboard/PerformersTab";
 import { ReportsTab } from "@/components/dashboard/ReportsTab";
 import { SettingsTab } from "@/components/dashboard/SettingsTab";
 import { GuestsTab } from "@/components/dashboard/GuestsTab";
+import { useAuth } from "@/hooks/useAuth";
 
 const tabs = ["Summary", "Revenue", "Performers", "Guests", "Reports", "Settings"] as const;
 type Tab = typeof tabs[number];
 
-export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("Summary");
-  const todayStr = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+const TAB_TITLES: Record<Tab, string> = {
+  Summary:    "Dashboard",
+  Revenue:    "Revenue",
+  Performers: "Dancers",
+  Guests:     "Guests",
+  Reports:    "Reports",
+  Settings:   "Settings",
+};
+
+function useCurrentTime() {
+  const [time, setTime] = useState(() =>
+    new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  );
+  useState(() => {
+    const id = setInterval(() => {
+      setTime(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+    }, 30000);
+    return () => clearInterval(id);
+  });
+  return time;
+}
+
+export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
+  const [activeTab, setActiveTab] = useState<Tab>(defaultTab ?? "Summary");
+  const { user } = useAuth();
+  const time = useCurrentTime();
+
+  const displayName = user?.email?.split("@")[0] ?? "Admin";
+  const capitalized = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <Link to="/" className="hover:opacity-80 transition-opacity">
-            <img src={logo} alt="2NYT Entertainment" className="h-10 w-auto" />
-          </Link>
-          <span className="font-heading text-lg tracking-wide text-foreground">Admin Dashboard</span>
+    <AppLayout>
+      {/* Page header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{TAB_TITLES[activeTab]}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Welcome back, {capitalized}</p>
         </div>
-
-        {/* Sub-nav tabs */}
-        <nav className="hidden md:flex items-center gap-1 bg-secondary/50 rounded-xl p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab
-                  ? "text-primary border-b-2 border-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground hidden sm:block">{todayStr}</span>
-          <Link to="/" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary border border-border/50 transition-all">
-            <ArrowLeft className="w-4 h-4" /> Back
-          </Link>
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+          <Clock className="w-4 h-4" />
+          {time}
         </div>
       </div>
 
-      {/* Mobile tab selector */}
-      <div className="md:hidden flex overflow-x-auto gap-1 p-2 border-b border-border bg-background/80 backdrop-blur-md sticky top-[65px] z-40">
+      {/* Mobile tab pills (hidden on desktop — use sidebar instead) */}
+      <div className="md:hidden flex overflow-x-auto gap-1 pb-3 mb-4 -mx-4 px-4">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+            className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
               activeTab === tab
-                ? "text-primary bg-primary/10"
-                : "text-muted-foreground"
+                ? "bg-primary text-white"
+                : "bg-secondary text-muted-foreground"
             }`}
           >
             {tab}
@@ -70,14 +74,12 @@ export default function Dashboard() {
       </div>
 
       {/* Content */}
-      <div className="p-6 max-w-7xl mx-auto">
-        {activeTab === "Summary" && <SummaryTab />}
-        {activeTab === "Revenue" && <RevenueTab />}
-        {activeTab === "Performers" && <PerformersTab />}
-        {activeTab === "Guests" && <GuestsTab />}
-        {activeTab === "Reports" && <ReportsTab />}
-        {activeTab === "Settings" && <SettingsTab />}
-      </div>
-    </div>
+      {activeTab === "Summary"    && <SummaryTab />}
+      {activeTab === "Revenue"    && <RevenueTab />}
+      {activeTab === "Performers" && <PerformersTab />}
+      {activeTab === "Guests"     && <GuestsTab />}
+      {activeTab === "Reports"    && <ReportsTab />}
+      {activeTab === "Settings"   && <SettingsTab />}
+    </AppLayout>
   );
 }

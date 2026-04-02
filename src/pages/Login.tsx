@@ -1,74 +1,135 @@
 import { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
-import { LogIn, Shield } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { LogIn, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import logo from "@/assets/logo-2nyt.png";
+
+const ROLE_REDIRECTS: Record<string, string> = {
+  admin:          "/dashboard",
+  owner:          "/dashboard",
+  manager:        "/floor",
+  door_staff:     "/door",
+  room_attendant: "/rooms",
+  house_mom:      "/floor",
+};
 
 export default function Login() {
-  const { signIn } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [params] = useSearchParams();
+  const isDancer = params.get("role") === "dancer";
+
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [shake, setShake]       = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      await signIn(email, password);
-      toast.success("Logged in successfully");
-      navigate("/");
-    } catch (err: any) {
-      toast.error(err.message || "Login failed");
-    } finally {
+    setError("");
+
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (authError) {
       setLoading(false);
+      setError(authError.message);
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      return;
     }
+
+    // Fetch role and redirect
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      const dest = data?.role ? (ROLE_REDIRECTS[data.role] ?? "/dashboard") : "/dashboard";
+      navigate(dest);
+    }
+    setLoading(false);
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="glass-card glow-amber w-full max-w-md p-8 space-y-8">
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
-            <Shield className="w-8 h-8 text-primary" />
-          </div>
-          <h1 className="text-3xl font-bold font-heading text-foreground">NightLedger</h1>
-          <p className="text-muted-foreground">Venue Management System</p>
-        </div>
+    <div className="min-h-screen flex">
+      {/* Left decorative panel */}
+      <div
+        className="hidden md:flex flex-col items-center justify-center w-80 px-10"
+        style={{ background: "hsl(240 18% 10%)" }}
+      >
+        <img src={logo} alt="2NYT Entertainment" className="h-20 w-auto mb-6" />
+        <p className="text-white/40 text-xs tracking-widest uppercase text-center">
+          Venue Intelligence<br />Built for the Floor
+        </p>
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="email" className="text-foreground">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@venue.com"
-              required
-              className="bg-secondary border-border"
-            />
+      {/* Right form panel */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-background">
+        <div
+          className={`w-full max-w-sm ${shake ? "animate-shake" : ""}`}
+        >
+          {/* Mobile logo */}
+          <div className="md:hidden flex justify-center mb-8">
+            <img src={logo} alt="2NYT" className="h-14 w-auto" />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="password" className="text-foreground">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="bg-secondary border-border"
-            />
-          </div>
-          <Button type="submit" className="w-full touch-target text-lg" disabled={loading}>
-            <LogIn className="w-5 h-5 mr-2" />
-            {loading ? "Signing in..." : "Sign In"}
-          </Button>
-        </form>
+
+          <h1
+            className="text-3xl font-heading tracking-widest text-foreground mb-1"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            {isDancer ? "DANCER LOGIN" : "STAFF LOGIN"}
+          </h1>
+          <p className="text-sm text-muted-foreground mb-8">
+            {isDancer ? "Sign in to your dancer account" : "Sign in to your associate account"}
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                className="w-full border border-border rounded-xl px-4 py-3 text-sm text-foreground bg-white placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                className="w-full border border-border rounded-xl px-4 py-3 text-sm text-foreground bg-white placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            {error && <p className="text-destructive text-xs">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-primary text-white font-medium rounded-xl py-3 text-sm hover:opacity-90 transition-all disabled:opacity-60 mt-2"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+              {loading ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+
+          <button
+            onClick={() => navigate("/")}
+            className="mt-6 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-center"
+          >
+            ← Back to home
+          </button>
+        </div>
       </div>
     </div>
   );

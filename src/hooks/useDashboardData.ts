@@ -798,6 +798,41 @@ export function useDanceSessionsToday() {
   });
 }
 
+export function useLogRoomSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dancerId,
+      roomName,
+      packageName,
+      amount,
+      customerCount = 1,
+      notes,
+    }: {
+      dancerId: string;
+      roomName: string;
+      packageName: string;
+      amount: number;
+      customerCount?: number;
+      notes?: string;
+    }) => {
+      const { error } = await supabase.from("room_sessions").insert({
+        dancer_id: dancerId,
+        room_name: roomName,
+        package_name: packageName,
+        amount,
+        customer_count: customerCount,
+        notes,
+        // entry_time will be set when the session actually starts (exits queue)
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room_sessions"] });
+    },
+  });
+}
+
 // ─── Entry tiers + today's door status ───────────────────────────────────────
 
 export function useEntryTiers() {

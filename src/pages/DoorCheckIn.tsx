@@ -14,6 +14,7 @@ import {
   useActiveDancers,
   useGuestCheckIn,
   useLogDanceSession,
+  useLogRoomSession,
   useDoorStatusToday,
   useClubSettings,
 } from "@/hooks/useDashboardData";
@@ -169,6 +170,7 @@ export default function DoorCheckIn() {
   const { totalGuests, totalRevenue } = useDoorStatusToday();
   const { scanAdd, manualAdd }        = useGuestCheckIn();
   const logDance  = useLogDanceSession();
+  const logRoom   = useLogRoomSession();
   const { current: stageOccupied, queue: stageQueue, putOnStage, addToQueue, advanceQueue, clearStage } = useStage();
 
   // ── UI state ──────────────────────────────────────────────────────────────
@@ -180,23 +182,47 @@ export default function DoorCheckIn() {
   const [selectedTier, setSelectedTier] = useState<{ id: string; name: string; price: number; duration_minutes: number | null } | null>(null);
   const [customPrice, setCustomPrice] = useState(50);
 
-  // Timer (count-up from 0)
-  const [timerSecs, setTimerSecs] = useState(0);
-  const [timerRunning, setTimerRunning] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Timer (count-up from 0) - removed, timer starts when session exits queue
+  // const [timerSecs, setTimerSecs] = useState(0);
+  // const [timerRunning, setTimerRunning] = useState(false);
+  // const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startTimer = () => {
-    if (timerRunning) return;
-    setTimerRunning(true);
-    timerRef.current = setInterval(() => setTimerSecs(s => s + 1), 1000);
+  const startSession = async () => {
+    if (!selectedTier || selectedDancers.length === 0) {
+      toast.error("Select a dancer and package first");
+      return;
+    }
+    const amount = selectedTier.price === 0 ? customPrice : selectedTier.price;
+    const primaryDancer = activeDancers.find(d => d.id === selectedDancers[0]);
+    if (!primaryDancer) return;
+
+    try {
+      await logRoom.mutateAsync({
+        dancerId: primaryDancer.id,
+        roomName: "Queue", // Placeholder, will be assigned when dequeued
+        packageName: selectedTier.name,
+        amount,
+        customerCount: selectedDancers.length,
+      });
+      toast.success(`Room session for ${primaryDancer.stage_name} added to queue`);
+      resetAll();
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to start session");
+    }
   };
-  const stopTimer = () => {
-    setTimerRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
+
+  // const startTimer = () => {
+  //   if (timerRunning) return;
+  //   setTimerRunning(true);
+  //   timerRef.current = setInterval(() => setTimerSecs(s => s + 1), 1000);
+  // };
+  // const stopTimer = () => {
+  //   setTimerRunning(false);
+  //   if (timerRef.current) clearInterval(timerRef.current);
+  // };
   const resetAll = () => {
-    stopTimer();
-    setTimerSecs(0);
+    // stopTimer();
+    // setTimerSecs(0);
     setSelectedDancers([]);
     setSelectedTier(null);
   };
@@ -488,17 +514,6 @@ export default function DoorCheckIn() {
               {/* Bottom action row */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => setTimerSecs(s => s + 45)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                  +45 sec
-                  {timerSecs > 0 && <span className="font-mono text-xs ml-1">({Math.floor(timerSecs/60)}:{String(timerSecs%60).padStart(2,"0")})</span>}
-                </button>
-
-                <button
                   onClick={() => {}}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
                 >
@@ -515,12 +530,12 @@ export default function DoorCheckIn() {
                 <div className="flex-1" />
 
                 <button
-                  onClick={startTimer}
-                  disabled={timerRunning}
+                  onClick={startSession}
+                  disabled={logRoom.isPending}
                   className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
                 >
                   <Play className="w-4 h-4" />
-                  {timerRunning ? "Running…" : "Start"}
+                  {logRoom.isPending ? "Starting…" : "Start"}
                 </button>
               </div>
             </div>

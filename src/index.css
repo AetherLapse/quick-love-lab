@@ -161,3 +161,21 @@
   0% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes tagline-in {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0);     opacity: 1; }
+}
+
+.animate-tagline-in {
+  animation: tagline-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

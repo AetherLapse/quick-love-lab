@@ -521,7 +521,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "manager" | "door_staff" | "room_attendant"
+      app_role: "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom"
       dancer_event_type:
         | "check_in"
         | "room_session"

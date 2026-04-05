@@ -1,9 +1,20 @@
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { UserRound, ShieldCheck, ScanFace, LogIn, UserPlus } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
 
+const TAGLINES = ["Pole Intelligence", "Venue Intelligence", "A Stage for Your Venue"];
+
 export default function Landing() {
   const navigate = useNavigate();
+  const [taglineIndex, setTaglineIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTaglineIndex(i => (i + 1) % TAGLINES.length);
+    }, 2800);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div
@@ -16,7 +27,7 @@ export default function Landing() {
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 items-center gap-8 md:gap-4">
 
         {/* ── LEFT: Dancers ── */}
-        <div className="flex flex-col items-center md:items-start gap-3">
+        <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-2 mb-1">
             <UserRound className="w-5 h-5 text-primary" />
             <span className="text-base font-semibold text-foreground">Dancers</span>
@@ -52,22 +63,26 @@ export default function Landing() {
           <img
             src={logo}
             alt="2NYT Entertainment"
-            className="h-36 md:h-44 w-auto drop-shadow-md mb-5"
+            className="h-36 md:h-44 w-auto drop-shadow-md mb-5 animate-float"
           />
-          <h1 className="text-2xl md:text-3xl font-bold leading-tight">
-            <span className="text-foreground">2NYT </span>
-            <span className="text-primary">Venue<br />Intelligence</span>
+          <h1 className="text-2xl md:text-3xl font-extrabold leading-tight tracking-tight text-foreground">
+            2NYT ENTERTAINMENT
           </h1>
-          <p className="text-sm text-primary/70 mt-1 tracking-wide">
-            Built from the Floor Up!
-          </p>
+          <div className="h-6 overflow-hidden mt-2">
+            <p
+              key={taglineIndex}
+              className="text-sm font-medium text-primary tracking-wide animate-tagline-in"
+            >
+              {TAGLINES[taglineIndex]}
+            </p>
+          </div>
         </div>
 
         {/* ── RIGHT: Associates ── */}
-        <div className="flex flex-col items-center md:items-end gap-3">
+        <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-2 mb-1">
             <ShieldCheck className="w-5 h-5 text-primary" />
-            <span className="text-base font-semibold text-foreground">Associates</span>
+            <span className="text-base font-semibold text-foreground">Employee</span>
           </div>
 
           <button

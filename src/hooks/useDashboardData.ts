@@ -881,8 +881,14 @@ export function useDoorStatusToday() {
     return result;
   }, [guestVisits.data, customerEntries.data, tiers.data]);
 
-  const totalGuests  = rows.reduce((s, r) => s + r.guestCount, 0);
-  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+  // Compute totals directly from raw visits to avoid double-counting when
+  // multiple tiers share the same price point (e.g. Full Cover + 2-for-1 both $10)
+  const allFees = [
+    ...(guestVisits.data ?? []).map(v => Number(v.door_fee)),
+    ...(customerEntries.data ?? []).map(v => Number(v.door_fee)),
+  ];
+  const totalGuests  = allFees.length;
+  const totalRevenue = allFees.reduce((s, f) => s + f, 0);
 
   return {
     rows,

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { CodeCreationPanel, VendorPanel, UsageTrackingPanel } from "@/pages/PromoSettings";
+import { Modal } from "@/components/Modal";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -6,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  Settings, Save, UserPlus, Users, ChevronDown,
+  Settings, Save, UserPlus, Users,
   Loader2, X, Eye, EyeOff, Check, ShieldCheck, Mic2,
-  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight,
+  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Mail, Pencil, AlertCircle,
 } from "lucide-react";
 
 type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom";
@@ -24,27 +26,6 @@ interface Dancer {
 }
 interface StaffMember {
   user_id: string; full_name: string; is_active: boolean; role: AppRole | null;
-}
-
-// ─── Modal shell ──────────────────────────────────────────────────────────────
-function Modal({ open, onClose, title, children }: {
-  open: boolean; onClose: () => void; title: string; children: React.ReactNode;
-}) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-base font-bold text-foreground">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
 }
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -91,7 +72,6 @@ function AddDancerModal({ open, onClose, onSuccess }: {
 }) {
   const [step, setStep]             = useState(0);
   const [stageName, setStageName]   = useState("");
-  const [employeeId, setEmployeeId] = useState("");
   const [pin, setPin]               = useState("");
   const [showPin, setShowPin]       = useState(false);
   const [payoutPct, setPayoutPct]   = useState("30");
@@ -99,31 +79,30 @@ function AddDancerModal({ open, onClose, onSuccess }: {
   const [saving, setSaving]         = useState(false);
 
   const reset = () => {
-    setStep(0); setStageName(""); setEmployeeId(""); setPin("");
+    setStep(0); setStageName(""); setPin("");
     setPayoutPct("30"); setEntranceFee("50"); setShowPin(false);
   };
 
   const close = () => { reset(); onClose(); };
 
   const next = () => {
-    if (step === 0) {
-      if (!stageName.trim()) { toast.error("Stage name is required"); return; }
-      if (!employeeId.trim()) { toast.error("Employee ID is required"); return; }
-    }
+    if (step === 0 && !stageName.trim()) { toast.error("Stage name is required"); return; }
     if (step === 1 && pin.length < 4) { toast.error("PIN must be 4–6 digits"); return; }
     setStep(s => s + 1);
   };
 
   const submit = async () => {
     setSaving(true);
-    const { error } = await supabase.from("dancers").insert({
-      stage_name: stageName.trim(), employee_id: employeeId.trim(),
-      pin_code: pin, payout_percentage: parseFloat(payoutPct),
-      entrance_fee: parseFloat(entranceFee), is_active: true,
+    const { error } = await (supabase as any).from("dancers").insert({
+      stage_name: stageName.trim(),
+      pin_code: pin,
+      payout_percentage: parseFloat(payoutPct),
+      entrance_fee: parseFloat(entranceFee),
+      is_active: true,
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Dancer "${stageName}" added!`);
+    toast.success(`Dancer "${stageName}" added — Employee ID auto-assigned`);
     reset(); onSuccess(); onClose();
   };
 
@@ -141,10 +120,11 @@ function AddDancerModal({ open, onClose, onSuccess }: {
               <Input autoFocus value={stageName} onChange={e => setStageName(e.target.value)}
                 placeholder="e.g. Crystal" onKeyDown={e => e.key === "Enter" && next()} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Employee ID <span className="text-destructive">*</span></Label>
-              <Input value={employeeId} onChange={e => setEmployeeId(e.target.value)}
-                placeholder="e.g. EMP-001" onKeyDown={e => e.key === "Enter" && next()} />
+            <div className="rounded-xl bg-secondary/40 border border-dashed border-border px-4 py-3 flex items-center gap-2">
+              <Check className="w-4 h-4 text-primary shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">Employee ID</span> will be auto-assigned (e.g. EMP-004) after saving. Share it with the dancer for enrollment at the door.
+              </p>
             </div>
           </>
         )}
@@ -180,7 +160,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
             <div className="mt-2 rounded-xl bg-secondary/50 border border-border p-4 space-y-1.5 text-sm">
               <p className="font-semibold text-foreground mb-2">Review</p>
               <div className="flex justify-between"><span className="text-muted-foreground">Stage Name</span><span className="font-medium">{stageName}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="font-medium">{employeeId}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="font-medium text-primary">Auto-assigned</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">PIN</span><span className="font-medium">{"•".repeat(pin.length)}</span></div>
             </div>
           </>
@@ -335,11 +315,203 @@ function AddStaffModal({ open, onClose, onSuccess }: {
   );
 }
 
+// ─── Edit Dancer modal ────────────────────────────────────────────────────────
+function EditDancerModal({ dancer, onClose, onSuccess }: {
+  dancer: Dancer | null; onClose: () => void; onSuccess: () => void;
+}) {
+  const [stageName, setStageName]     = useState("");
+  const [pin, setPin]                 = useState("");
+  const [showPin, setShowPin]         = useState(false);
+  const [payoutPct, setPayoutPct]     = useState("30");
+  const [entranceFee, setEntranceFee] = useState("50");
+  const [saving, setSaving]           = useState(false);
+
+  useEffect(() => {
+    if (dancer) {
+      setStageName(dancer.stage_name);
+      setPin(dancer.pin_code);
+      setPayoutPct(String(dancer.payout_percentage));
+      setEntranceFee(String(dancer.entrance_fee));
+    }
+  }, [dancer]);
+
+  const handleSave = async () => {
+    if (!dancer) return;
+    if (!stageName.trim()) { toast.error("Stage name is required"); return; }
+    if (pin.length < 4)    { toast.error("PIN must be 4–6 digits"); return; }
+    setSaving(true);
+    const { error } = await supabase.from("dancers").update({
+      stage_name: stageName.trim(),
+      pin_code: pin,
+      payout_percentage: parseFloat(payoutPct),
+      entrance_fee: parseFloat(entranceFee),
+    }).eq("id", dancer.id);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Dancer updated");
+    onSuccess(); onClose();
+  };
+
+  return (
+    <Modal open={!!dancer} onClose={onClose} title={`Edit — ${dancer?.stage_name ?? ""}`}>
+      <div className="px-6 py-5 space-y-4">
+        {/* Enrollment status banner */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
+          ${(dancer as any)?.is_enrolled ? "bg-green-50 text-green-700 border border-green-200" : "bg-yellow-50 text-yellow-700 border border-yellow-200"}`}>
+          {(dancer as any)?.is_enrolled
+            ? <><Check className="w-3.5 h-3.5" /> Face enrolled via Rekognition</>
+            : <><AlertCircle className="w-3.5 h-3.5" /> Not yet enrolled — dancer must visit door for face scan</>}
+          <span className="ml-auto font-mono opacity-70">{dancer?.employee_id}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5 col-span-2">
+            <Label>Stage Name <span className="text-destructive">*</span></Label>
+            <Input value={stageName} onChange={e => setStageName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Entrance Fee ($)</Label>
+            <Input type="number" value={entranceFee} onChange={e => setEntranceFee(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payout %</Label>
+            <Input type="number" value={payoutPct} onChange={e => setPayoutPct(e.target.value)} min={0} max={100} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>PIN Code <span className="text-destructive">*</span> <span className="text-xs text-muted-foreground font-normal">(4–6 digits)</span></Label>
+          <div className="relative">
+            <Input type={showPin ? "text" : "password"} value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="pr-10 text-center text-xl tracking-[0.4em]" />
+            <button type="button" onClick={() => setShowPin(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="px-6 pb-5 flex gap-2 justify-end">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Changes
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Edit Staff modal ─────────────────────────────────────────────────────────
+function EditStaffModal({ member, onClose, onSuccess }: {
+  member: StaffMember | null; onClose: () => void; onSuccess: () => void;
+}) {
+  const [name, setName]       = useState("");
+  const [role, setRole]       = useState<AppRole>("door_staff");
+  const [resetEmail, setResetEmail] = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (member) {
+      setName(member.full_name);
+      setRole(member.role ?? "door_staff");
+      setResetEmail("");
+    }
+  }, [member]);
+
+  const handleSave = async () => {
+    if (!member) return;
+    if (!name.trim()) { toast.error("Name is required"); return; }
+    setSaving(true);
+
+    const { error: nameErr } = await supabase
+      .from("profiles")
+      .update({ full_name: name.trim() })
+      .eq("user_id", member.user_id);
+
+    if (nameErr) { setSaving(false); toast.error(nameErr.message); return; }
+
+    // Update role
+    await supabase.from("user_roles").delete().eq("user_id", member.user_id);
+    const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: member.user_id, role });
+    setSaving(false);
+    if (roleErr) { toast.error(roleErr.message); return; }
+
+    toast.success("Staff profile updated");
+    onSuccess(); onClose();
+  };
+
+  const handlePasswordReset = async () => {
+    if (!resetEmail.trim() || !resetEmail.includes("@")) {
+      toast.error("Enter the staff member's email address");
+      return;
+    }
+    setSending(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
+    setSending(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Password reset email sent to ${resetEmail}`);
+    setResetEmail("");
+  };
+
+  return (
+    <Modal open={!!member} onClose={onClose} title={`Edit — ${member?.full_name ?? ""}`}>
+      <div className="px-6 py-5 space-y-5">
+        {/* Name */}
+        <div className="space-y-1.5">
+          <Label>Full Name <span className="text-destructive">*</span></Label>
+          <Input value={name} onChange={e => setName(e.target.value)} />
+        </div>
+
+        {/* Role */}
+        <div className="space-y-2">
+          <Label>Role</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.keys(ROLE_LABELS) as AppRole[]).map(r => (
+              <button key={r} onClick={() => setRole(r)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all text-left
+                  ${role === r ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-foreground"}`}>
+                <div className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center
+                  ${role === r ? "border-primary" : "border-muted-foreground"}`}>
+                  {role === r && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
+                </div>
+                {ROLE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Password reset */}
+        <div className="rounded-xl border border-border bg-secondary/30 p-4 space-y-2">
+          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Reset Password</p>
+          <p className="text-xs text-muted-foreground">Enter their email to send a password reset link.</p>
+          <div className="flex gap-2">
+            <Input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)}
+              placeholder="staff@2nyt.com" className="bg-white" />
+            <Button variant="outline" onClick={handlePasswordReset} disabled={sending} className="shrink-0 gap-1.5">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Send
+            </Button>
+          </div>
+        </div>
+      </div>
+      <div className="px-6 pb-5 flex gap-2 justify-end">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Changes
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Dancers panel ────────────────────────────────────────────────────────────
 function DancersPanel() {
   const [dancers, setDancers] = useState<Dancer[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing]     = useState<Dancer | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -360,6 +532,7 @@ function DancersPanel() {
   return (
     <>
       <AddDancerModal open={modalOpen} onClose={() => setModalOpen(false)} onSuccess={load} />
+      <EditDancerModal dancer={editing} onClose={() => setEditing(null)} onSuccess={load} />
       <Section
         icon={<Mic2 className="w-5 h-5" />}
         title="Dancers"
@@ -400,6 +573,11 @@ function DancersPanel() {
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${d.is_active ? "bg-green-50 text-green-600" : "bg-secondary text-muted-foreground"}`}>
                   {d.is_active ? "Active" : "Off"}
                 </span>
+                <button onClick={() => setEditing(d)}
+                  title="Edit dancer"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
                 <button onClick={() => toggleActive(d.id, d.is_active)}
                   title={d.is_active ? "Deactivate" : "Activate"}
                   className="text-muted-foreground hover:text-primary transition-colors">
@@ -418,9 +596,10 @@ function DancersPanel() {
 
 // ─── Staff panel ──────────────────────────────────────────────────────────────
 function StaffPanel() {
-  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staff, setStaff]     = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing]     = useState<StaffMember | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -436,23 +615,15 @@ function StaffPanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleRoleChange = async (userId: string, role: AppRole) => {
-    await supabase.from("user_roles").delete().eq("user_id", userId);
-    const { error } = await supabase.from("user_roles").insert({ user_id: userId, role });
-    if (error) { toast.error(error.message); return; }
-    toast.success("Role updated");
-    load();
-  };
-
   const toggleActive = async (userId: string, current: boolean) => {
     // Optimistic update
     setStaff(prev => prev.map(s => s.user_id === userId ? { ...s, is_active: !current } : s));
-    const { error, count } = await supabase
+    const { error, data } = await supabase
       .from("profiles")
       .update({ is_active: !current })
       .eq("user_id", userId)
-      .select("*", { count: "exact", head: true });
-    if (error || count === 0) {
+      .select("user_id");
+    if (error || !data?.length) {
       // Revert on failure
       setStaff(prev => prev.map(s => s.user_id === userId ? { ...s, is_active: current } : s));
       toast.error(error?.message ?? "Update failed — check permissions");
@@ -464,6 +635,7 @@ function StaffPanel() {
   return (
     <>
       <AddStaffModal open={modalOpen} onClose={() => setModalOpen(false)} onSuccess={load} />
+      <EditStaffModal member={editing} onClose={() => setEditing(null)} onSuccess={load} />
       <Section
         icon={<Users className="w-5 h-5" />}
         title="Staff Management"
@@ -491,19 +663,15 @@ function StaffPanel() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{s.full_name}</p>
-                  <p className="text-xs text-muted-foreground">{s.is_active ? "Active" : "Inactive"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {s.role ? ROLE_LABELS[s.role] : "No role"} · {s.is_active ? "Active" : "Inactive"}
+                  </p>
                 </div>
-                <div className="relative">
-                  <select value={s.role ?? ""}
-                    onChange={e => handleRoleChange(s.user_id, e.target.value as AppRole)}
-                    className="appearance-none text-xs font-medium border border-border rounded-lg px-3 py-1.5 pr-6 bg-secondary/50 text-foreground focus:outline-none focus:border-primary cursor-pointer">
-                    <option value="" disabled>No role</option>
-                    {(Object.keys(ROLE_LABELS) as AppRole[]).map(r => (
-                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
-                </div>
+                <button onClick={() => setEditing(s)}
+                  title="Edit staff"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
                 <button onClick={() => toggleActive(s.user_id, s.is_active)}
                   title={s.is_active ? "Deactivate" : "Activate"}
                   className="text-muted-foreground hover:text-primary transition-colors">
@@ -578,17 +746,34 @@ function ClubSettingsPanel() {
 export default function ClubSettings() {
   return (
     <AppLayout>
-      <div className="space-y-6 max-w-2xl">
+      <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold font-heading text-foreground flex items-center gap-2">
             <Settings className="w-6 h-6 text-primary" /> Settings
           </h1>
-          <p className="text-muted-foreground text-sm">Manage club configuration, dancers, and staff</p>
+          <p className="text-muted-foreground text-sm">Manage club configuration, dancers, staff, and promo cards</p>
         </div>
-        <ClubSettingsPanel />
-        <DancersPanel />
-        <StaffPanel />
+
+        {/* Row 1: Club config + Dancers + Staff */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <ClubSettingsPanel />
+          <DancersPanel />
+          <StaffPanel />
+        </div>
+
+        {/* Row 2: Promo card system */}
+        <PromoRow />
       </div>
     </AppLayout>
+  );
+}
+
+function PromoRow() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <CodeCreationPanel />
+      <VendorPanel />
+      <UsageTrackingPanel />
+    </div>
   );
 }

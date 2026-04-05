@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera } from "lucide-react";
+import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search } from "lucide-react";
 import { useDancerCheckIn } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -15,8 +15,200 @@ interface DancerCheckInTabProps {
 }
 
 type Step = "idle" | "face-camera" | "face-processing" | "face-failed" | "pin" | "success";
+type EnrollStep = "lookup" | "camera" | "processing" | "done" | "already-enrolled";
+
+// ─── Enrollment panel ─────────────────────────────────────────────────────────
+function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
+  const [enrollStep, setEnrollStep] = useState<EnrollStep>("lookup");
+  const [empId, setEmpId]           = useState("");
+  const [dancer, setDancer]         = useState<{ id: string; stage_name: string; is_enrolled: boolean } | null>(null);
+  const [searching, setSearching]   = useState(false);
+  const [enrolling, setEnrolling]   = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+
+  const videoRef  = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+  useEffect(() => () => stopCamera(), [stopCamera]);
+
+  const handleLookup = async () => {
+    if (!empId.trim()) return;
+    setSearching(true); setError(null);
+    const { data, error: err } = await supabase
+      .from("dancers")
+      .select("id, stage_name, is_enrolled")
+      .ilike("employee_id", empId.trim())
+      .single();
+    setSearching(false);
+    if (err || !data) { setError("No dancer found for that Employee ID."); return; }
+    setDancer(data as any);
+    if ((data as any).is_enrolled) setEnrollStep("already-enrolled");
+    else setEnrollStep("camera");
+  };
+
+  const startCamera = async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+    } catch {
+      setError("Camera unavailable.");
+    }
+  };
+
+  useEffect(() => {
+    if (enrollStep === "camera") startCamera();
+    else stopCamera();
+  }, [enrollStep]);
+
+  const handleCapture = async () => {
+    if (!videoRef.current || !canvasRef.current || !dancer) return;
+    const canvas = canvasRef.current;
+    canvas.width  = videoRef.current.videoWidth  || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
+    stopCamera();
+    setEnrollStep("processing");
+    setEnrolling(true);
+
+    const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? "";
+
+    try {
+      const res = await fetch(
+        "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-index",
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ dancer_id: dancer.id, image_base64: base64 }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+
+      // Mark enrolled
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from("dancers").update({
+        is_enrolled: true,
+        enrolled_at: new Date().toISOString(),
+        enrolled_by: user?.id ?? null,
+      }).eq("id", dancer.id);
+
+      setEnrollStep("done");
+    } catch (e: any) {
+      setError(e.message ?? "Enrollment failed. Try again.");
+      setEnrollStep("camera");
+      startCamera();
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  return (
+    <div className="glass-card p-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h3 className="font-semibold text-foreground">Enroll Dancer Face</h3>
+      </div>
+
+      {/* Step: lookup */}
+      {enrollStep === "lookup" && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Enter the dancer's Employee ID given by admin to begin enrollment.</p>
+          <div className="flex gap-2">
+            <input
+              value={empId}
+              onChange={e => setEmpId(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === "Enter" && handleLookup()}
+              placeholder="e.g. EMP-004"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-secondary/50 text-sm font-mono focus:outline-none focus:border-primary"
+            />
+            <button onClick={handleLookup} disabled={searching || !empId.trim()}
+              className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2">
+              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              Find
+            </button>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      )}
+
+      {/* Step: camera */}
+      {enrollStep === "camera" && dancer && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-sm font-medium">
+            <User className="w-4 h-4" /> Enrolling: <span className="font-bold">{dancer.stage_name}</span>
+          </div>
+          <div className="relative aspect-video bg-secondary/80 rounded-xl border border-border overflow-hidden">
+            <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+            </div>
+            <p className="absolute bottom-3 inset-x-0 text-center text-xs text-white/80">Center face in oval, then capture</p>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <button onClick={handleCapture}
+            className="w-full py-3 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90">
+            <Camera className="w-5 h-5" /> Capture & Enroll
+          </button>
+        </div>
+      )}
+
+      {/* Step: processing */}
+      {enrollStep === "processing" && (
+        <div className="flex flex-col items-center gap-4 py-8">
+          <Loader2 className="w-10 h-10 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Indexing face with AWS Rekognition…</p>
+        </div>
+      )}
+
+      {/* Step: already enrolled */}
+      {enrollStep === "already-enrolled" && dancer && (
+        <div className="space-y-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800">
+            <strong>{dancer.stage_name}</strong> is already enrolled. Re-enrolling will replace their existing face data.
+          </div>
+          <button onClick={() => setEnrollStep("camera")}
+            className="w-full py-3 rounded-xl bg-primary text-white font-semibold">
+            Re-Enroll Face
+          </button>
+        </div>
+      )}
+
+      {/* Step: done */}
+      {enrollStep === "done" && dancer && (
+        <div className="space-y-4">
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 flex items-center gap-3">
+            <Check className="w-6 h-6 text-green-600 shrink-0" />
+            <div>
+              <p className="font-bold text-green-800">{dancer.stage_name} enrolled!</p>
+              <p className="text-sm text-green-700">Face indexed with AWS Rekognition. They can now check in via face scan.</p>
+            </div>
+          </div>
+          <button onClick={() => { setEnrollStep("lookup"); setEmpId(""); setDancer(null); setError(null); }}
+            className="w-full py-2.5 rounded-xl border border-border text-sm font-medium hover:border-primary/50 transition-colors">
+            Enroll Another Dancer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps) {
+  const [mode, setMode] = useState<"checkin" | "enroll">("checkin");
   const [step, setStep] = useState<Step>("idle");
   const [result, setResult] = useState<{ name: string; fee: number } | null>(null);
   const [resultMethod, setResultMethod] = useState<"Face Scan" | "PIN Entry">("Face Scan");
@@ -167,6 +359,10 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     setFaceError(null);
   };
 
+  if (mode === "enroll") {
+    return <EnrollDancerPanel onBack={() => setMode("checkin")} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="glass-card p-6">
@@ -187,6 +383,14 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
             >
               Use PIN Instead →
             </button>
+            <div className="border-t border-border/40 mt-3 pt-3">
+              <button
+                onClick={() => setMode("enroll")}
+                className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors py-1.5"
+              >
+                <UserPlus className="w-4 h-4" /> New Dancer Enrollment →
+              </button>
+            </div>
           </>
         )}
 

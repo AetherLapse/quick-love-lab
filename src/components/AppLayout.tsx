@@ -4,17 +4,18 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutGrid,
   DoorOpen,
-  Heart,
   Users,
+  MonitorSmartphone,
   FileText,
   Settings,
   LogOut,
   Menu,
-  X,
   Mic2,
   Clock,
 } from "lucide-react";
 import { useStage, useElapsed } from "@/contexts/StageContext";
+import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
+import { KioskLockScreen } from "@/components/KioskLockScreen";
 
 type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom";
 
@@ -39,10 +40,10 @@ const navItems: NavItem[] = [
     roles: ["admin", "owner", "manager", "door_staff"],
   },
   {
-    path: "/floor",
-    label: "House Mom",
-    icon: Heart,
-    roles: ["admin", "owner", "manager", "house_mom"],
+    path: "/stage",
+    label: "Stage",
+    icon: Mic2,
+    roles: ["admin", "owner", "manager"],
   },
   {
     path: "/dancers",
@@ -55,6 +56,12 @@ const navItems: NavItem[] = [
     label: "Reports",
     icon: FileText,
     roles: ["admin", "owner", "manager", "door_staff"],
+  },
+  {
+    path: "/kiosks",
+    label: "Kiosks",
+    icon: MonitorSmartphone,
+    roles: ["admin", "owner", "manager"],
   },
   {
     path: "/settings",
@@ -73,16 +80,7 @@ const ROLE_LABELS: Record<string, string> = {
   house_mom:      "House Mom",
 };
 
-function Avatar({ role }: { role: string | null }) {
-  return (
-    <div
-      className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-      style={{ background: "hsl(var(--sidebar-primary))" }}
-    >
-      2N
-    </div>
-  );
-}
+import logo2nyt from "@/assets/logo-2nyt.png";
 
 // ── Stage status pills ────────────────────────────────────────────────────────
 
@@ -154,9 +152,9 @@ function Sidebar({
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <Avatar role={role} />
+        <img src={logo2nyt} alt="2NYT Logo" className="w-9 h-9 rounded-full object-cover shrink-0" />
         <div className="min-w-0">
-          <p className="text-white text-sm font-semibold leading-none">2NYT</p>
+          <p className="text-white text-sm font-semibold leading-none">2NYT ENTERTAINMENT</p>
           <p className="text-white/40 text-xs mt-0.5">Venue Intelligence</p>
         </div>
       </div>
@@ -242,6 +240,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     (item) => role && item.roles.includes(role as AppRole)
   );
 
+  const { isLocked } = useKioskHeartbeat();
+
   const handleNavigate = (path: string) => {
     navigate(path);
     setMobileOpen(false);
@@ -252,12 +252,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     role,
     userEmail: user?.email,
     onNavigate: handleNavigate,
-    onSignOut: signOut,
+    onSignOut: async () => { await signOut(); navigate("/login"); },
     currentPath: location.pathname,
   };
 
   return (
     <div className="flex min-h-screen bg-background">
+      <KioskLockScreen isLocked={isLocked} />
       {/* Desktop sidebar — fixed width */}
       <aside className="hidden md:block w-56 shrink-0 sticky top-0 h-screen">
         <Sidebar {...sidebarProps} />

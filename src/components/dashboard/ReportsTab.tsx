@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Download, FileText, Users, BarChart3, DoorOpen, Lock } from "lucide-react";
+import { PanelStack } from "./DraggablePanels";
 import { toast } from "sonner";
 import { DateFilter } from "./DateFilter";
 import { type Period } from "./mockData";
@@ -225,116 +226,131 @@ ${line}`;
         })}
       </div>
 
-      {/* KPI summary row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: "Door Revenue",   value: fmt(metrics.doorRevenue),  sub: `${metrics.totalGuests} guests` },
-          { label: "Room Revenue",   value: fmt(metrics.roomGross),     sub: `${sessions.length} sessions` },
-          { label: "Gross Total",    value: fmt(metrics.gross),         sub: `House net ${fmt(metrics.houseNet)}` },
-          { label: "Dancer Payouts", value: fmt(metrics.roomDancer),    sub: `${metrics.payroll.length} performers` },
-        ].map((k) => (
-          <div key={k.label} className="glass-card p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{k.label}</p>
-            <p className="text-xl font-heading text-primary">{loading ? "…" : k.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{loading ? "" : k.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Export cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {[
-          { Icon: DoorOpen,  title: "Shift Report",           desc: "All door + room entries for the period",  action: exportShiftReport },
-          { Icon: Users,     title: "Dancer Payroll Sheet",   desc: "Net payout owed per performer",            action: exportPayroll },
-          { Icon: BarChart3, title: "Full Revenue Report",    desc: "Aggregated revenue for selected range",    action: exportFullPeriod },
-        ].map(({ Icon, title, desc, action }) => (
-          <div key={title} className="glass-card p-6 flex flex-col justify-between gap-4">
-            <div>
-              <Icon className="w-6 h-6 text-primary mb-2" />
-              <h3 className="font-heading text-xl tracking-wide mb-1">{title}</h3>
-              <p className="text-muted-foreground text-sm">{desc}</p>
+      <PanelStack storageKey="reports" panels={[
+        {
+          id: "kpis", label: "KPI Summary",
+          node: (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Door Revenue",   value: fmt(metrics.doorRevenue),  sub: `${metrics.totalGuests} guests` },
+                { label: "Room Revenue",   value: fmt(metrics.roomGross),     sub: `${sessions.length} sessions` },
+                { label: "Gross Total",    value: fmt(metrics.gross),         sub: `House net ${fmt(metrics.houseNet)}` },
+                { label: "Dancer Payouts", value: fmt(metrics.roomDancer),    sub: `${metrics.payroll.length} performers` },
+              ].map((k) => (
+                <div key={k.label} className="glass-card p-4">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{k.label}</p>
+                  <p className="text-xl font-heading text-primary">{loading ? "…" : k.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{loading ? "" : k.sub}</p>
+                </div>
+              ))}
             </div>
-            <button
-              onClick={action}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all disabled:opacity-40"
-            >
-              <Download className="w-4 h-4" /> Export CSV
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Report preview */}
-      <div className="glass-card p-6 mb-8">
-        <div className="flex items-center gap-2 mb-4">
-          <FileText className="w-5 h-5 text-primary" />
-          <h3 className="font-heading text-2xl tracking-wide">Report Preview</h3>
-          <span className="text-xs text-muted-foreground ml-2">{dateLabel}</span>
-        </div>
-        <div className="bg-background border border-border rounded-xl p-6 font-mono text-sm leading-relaxed overflow-x-auto">
-          {loading
-            ? <p className="text-muted-foreground">Loading data…</p>
-            : <pre className="text-foreground whitespace-pre-wrap">{previewText}</pre>
-          }
-        </div>
-      </div>
-
-      {/* Dancer payroll table */}
-      <div className="glass-card p-6">
-        <h3 className="font-heading text-2xl tracking-wide mb-4">Dancer Payroll Breakdown</h3>
-        {loading ? (
-          <p className="text-muted-foreground text-sm">Loading…</p>
-        ) : metrics.payroll.length === 0 ? (
-          <p className="text-muted-foreground text-sm italic">No performer sessions in this period.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-3 px-3 text-left font-medium">Performer</th>
-                  <th className="py-3 px-3 text-right font-medium">Sessions</th>
-                  <th className="py-3 px-3 text-right font-medium">Gross Cut</th>
-                  <th className="py-3 px-3 text-right font-medium">Entrance Fee</th>
-                  <th className="py-3 px-3 text-right font-medium">Net Payout</th>
-                  <th className="py-3 px-3 text-center font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metrics.payroll.map((d) => (
-                  <tr key={d.id} className="border-b border-border/30 hover:bg-primary/5 transition-colors">
-                    <td className="py-3 px-3 font-medium text-foreground">{d.stageName}</td>
-                    <td className="py-3 px-3 text-right text-muted-foreground">{d.sessions}</td>
-                    <td className="py-3 px-3 text-right text-foreground">{fmt(d.grossCut)}</td>
-                    <td className="py-3 px-3 text-right text-destructive">−{fmt(d.entranceFeeOwed)}</td>
-                    <td className={`py-3 px-3 text-right font-semibold ${d.net >= 0 ? "text-success" : "text-destructive"}`}>
-                      {d.net >= 0 ? fmt(d.net) : `−${fmt(Math.abs(d.net))}`}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      {d.net < 0
-                        ? <span className="px-2 py-0.5 rounded-full bg-destructive/15 text-destructive text-xs font-medium">Owes Club</span>
-                        : <span className="px-2 py-0.5 rounded-full bg-success/15 text-success text-xs font-medium">Pay Out</span>
-                      }
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-border text-foreground font-semibold">
-                  <td className="py-3 px-3">Totals</td>
-                  <td className="py-3 px-3 text-right text-muted-foreground">{metrics.payroll.reduce((s, d) => s + d.sessions, 0)}</td>
-                  <td className="py-3 px-3 text-right">{fmt(metrics.payroll.reduce((s, d) => s + d.grossCut, 0))}</td>
-                  <td className="py-3 px-3 text-right text-destructive">−{fmt(metrics.payroll.reduce((s, d) => s + d.entranceFeeOwed, 0))}</td>
-                  <td className={`py-3 px-3 text-right ${metrics.roomDancer >= 0 ? "text-success" : "text-destructive"}`}>
-                    {fmt(metrics.payroll.reduce((s, d) => s + d.net, 0))}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
+          ),
+        },
+        {
+          id: "export", label: "Export Cards",
+          node: (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                { Icon: DoorOpen,  title: "Shift Report",           desc: "All door + room entries for the period",  action: exportShiftReport },
+                { Icon: Users,     title: "Dancer Payroll Sheet",   desc: "Net payout owed per performer",            action: exportPayroll },
+                { Icon: BarChart3, title: "Full Revenue Report",    desc: "Aggregated revenue for selected range",    action: exportFullPeriod },
+              ].map(({ Icon, title, desc, action }) => (
+                <div key={title} className="glass-card p-6 flex flex-col justify-between gap-4">
+                  <div>
+                    <Icon className="w-6 h-6 text-primary mb-2" />
+                    <h3 className="font-heading text-xl tracking-wide mb-1">{title}</h3>
+                    <p className="text-muted-foreground text-sm">{desc}</p>
+                  </div>
+                  <button
+                    onClick={action}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all disabled:opacity-40"
+                  >
+                    <Download className="w-4 h-4" /> Export CSV
+                  </button>
+                </div>
+              ))}
+            </div>
+          ),
+        },
+        {
+          id: "preview", label: "Report Preview",
+          node: (
+            <div className="glass-card p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="w-5 h-5 text-primary" />
+                <h3 className="font-heading text-2xl tracking-wide">Report Preview</h3>
+                <span className="text-xs text-muted-foreground ml-2">{dateLabel}</span>
+              </div>
+              <div className="bg-background border border-border rounded-xl p-6 font-mono text-sm leading-relaxed overflow-x-auto">
+                {loading
+                  ? <p className="text-muted-foreground">Loading data…</p>
+                  : <pre className="text-foreground whitespace-pre-wrap">{previewText}</pre>
+                }
+              </div>
+            </div>
+          ),
+        },
+        {
+          id: "payroll", label: "Dancer Payroll Breakdown",
+          node: (
+            <div className="glass-card p-6">
+              <h3 className="font-heading text-2xl tracking-wide mb-4">Dancer Payroll Breakdown</h3>
+              {loading ? (
+                <p className="text-muted-foreground text-sm">Loading…</p>
+              ) : metrics.payroll.length === 0 ? (
+                <p className="text-muted-foreground text-sm italic">No performer sessions in this period.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="py-3 px-3 text-left font-medium">Performer</th>
+                        <th className="py-3 px-3 text-right font-medium">Sessions</th>
+                        <th className="py-3 px-3 text-right font-medium">Gross Cut</th>
+                        <th className="py-3 px-3 text-right font-medium">Entrance Fee</th>
+                        <th className="py-3 px-3 text-right font-medium">Net Payout</th>
+                        <th className="py-3 px-3 text-center font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.payroll.map((d) => (
+                        <tr key={d.id} className="border-b border-border/30 hover:bg-primary/5 transition-colors">
+                          <td className="py-3 px-3 font-medium text-foreground">{d.stageName}</td>
+                          <td className="py-3 px-3 text-right text-muted-foreground">{d.sessions}</td>
+                          <td className="py-3 px-3 text-right text-foreground">{fmt(d.grossCut)}</td>
+                          <td className="py-3 px-3 text-right text-destructive">−{fmt(d.entranceFeeOwed)}</td>
+                          <td className={`py-3 px-3 text-right font-semibold ${d.net >= 0 ? "text-success" : "text-destructive"}`}>
+                            {d.net >= 0 ? fmt(d.net) : `−${fmt(Math.abs(d.net))}`}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {d.net < 0
+                              ? <span className="px-2 py-0.5 rounded-full bg-destructive/15 text-destructive text-xs font-medium">Owes Club</span>
+                              : <span className="px-2 py-0.5 rounded-full bg-success/15 text-success text-xs font-medium">Pay Out</span>
+                            }
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-border text-foreground font-semibold">
+                        <td className="py-3 px-3">Totals</td>
+                        <td className="py-3 px-3 text-right text-muted-foreground">{metrics.payroll.reduce((s, d) => s + d.sessions, 0)}</td>
+                        <td className="py-3 px-3 text-right">{fmt(metrics.payroll.reduce((s, d) => s + d.grossCut, 0))}</td>
+                        <td className="py-3 px-3 text-right text-destructive">−{fmt(metrics.payroll.reduce((s, d) => s + d.entranceFeeOwed, 0))}</td>
+                        <td className={`py-3 px-3 text-right ${metrics.roomDancer >= 0 ? "text-success" : "text-destructive"}`}>
+                          {fmt(metrics.payroll.reduce((s, d) => s + d.net, 0))}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          ),
+        },
+      ]} />
     </div>
   );
 }

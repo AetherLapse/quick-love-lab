@@ -33,8 +33,10 @@ const App = () => (
             <Route path="/dashboard" element={<DemoLogin role="admin"><Dashboard /></DemoLogin>} />
             <Route path="/floor" element={<DemoLogin role="manager"><FloorView /></DemoLogin>} />
             <Route path="/settings" element={<DemoLogin role="admin"><ClubSettings /></DemoLogin>} />
+            <Route path="/stage"   element={<DemoLogin role="admin"><Dashboard defaultTab="Stage" /></DemoLogin>} />
             <Route path="/dancers" element={<DemoLogin role="admin"><Dashboard defaultTab="Performers" /></DemoLogin>} />
             <Route path="/reports" element={<DemoLogin role="admin"><Dashboard defaultTab="Reports" /></DemoLogin>} />
+            <Route path="/kiosks"  element={<DemoLogin role="admin"><Dashboard defaultTab="Kiosks"  /></DemoLogin>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

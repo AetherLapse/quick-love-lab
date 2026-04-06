@@ -249,7 +249,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
         className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl mb-4 flex items-center justify-center gap-3 text-lg transition-all hover:glow-gold active:scale-[0.98]"
       >
         <Camera className="w-5 h-5" />
-        Scan Driver's License
+        Scan Offer QR Code
       </button>
     );
   }
@@ -273,7 +273,7 @@ export default function CameraIDScanner({ onEntry }: CameraIDScannerProps) {
 
           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8">
             <p className="text-foreground/80 text-xs text-center">
-              Point camera at the <strong>back</strong> of the Driver's License — auto-detects barcode
+              Point camera at the offer QR Code — auto-detects barcode
             </p>
           </div>
 

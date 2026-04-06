@@ -11,7 +11,7 @@ export function getDateRange(period: Period, custom?: CustomRange): CustomRange 
   if (period === "Custom" && custom?.start && custom?.end) return custom;
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
-  if (period === "Today" || period === "Tonight") return { start: todayStr, end: todayStr };
+  if (period === "Tonight") return { start: todayStr, end: todayStr };
   if (period === "Last Night") {
     const d = new Date(now);
     d.setDate(now.getDate() - 1);
@@ -361,7 +361,7 @@ export function useRevenueChartData(period: Period, custom?: CustomRange) {
     const gv = guestVisits.data ?? [];
     const ce = customerEntries.data ?? [];
 
-    if (period === "Today") {
+    if (period === "Tonight") {
       const hours = ["8PM", "9PM", "10PM", "11PM", "12AM", "1AM", "2AM", "3AM"];
       const hourMap: Record<string, number> = {
         "8PM": 20, "9PM": 21, "10PM": 22, "11PM": 23,
@@ -652,13 +652,29 @@ export function useGuestCheckIn() {
   const qc = useQueryClient();
 
   const manualAdd = useMutation({
-    mutationFn: async ({ doorFee, loggedBy }: { doorFee: number; loggedBy: string }) => {
-      const { error } = await supabase.from("customer_entries").insert({
+    mutationFn: async ({ doorFee, loggedBy, tierId, guestCount = 1, vendorId }: { doorFee: number; loggedBy: string; tierId?: string; guestCount?: number; vendorId?: string }) => {
+      const { error } = await (supabase as any).from("customer_entries").insert({
         door_fee: doorFee,
         shift_date: today(),
         logged_by: loggedBy,
+        guest_count: guestCount,
+        ...(tierId ? { entry_tier_id: tierId } : {}),
+        ...(vendorId ? { vendor_id: vendorId } : {}),
       });
       if (error) throw error;
+    },
+    onMutate: async ({ doorFee, tierId, guestCount = 1 }) => {
+      const todayStr = today();
+      await qc.cancelQueries({ queryKey: ["customer_entries", todayStr, todayStr] });
+      const prev = qc.getQueryData<any[]>(["customer_entries", todayStr, todayStr]);
+      qc.setQueryData(["customer_entries", todayStr, todayStr], (old: any[] = []) => [
+        { id: `optimistic-${Date.now()}`, door_fee: doorFee, entry_tier_id: tierId ?? null, guest_count: guestCount, entry_time: new Date().toISOString(), shift_date: todayStr },
+        ...old,
+      ]);
+      return { prev, todayStr };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx) qc.setQueryData(["customer_entries", ctx.todayStr, ctx.todayStr], ctx.prev);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customer_entries"] });
@@ -672,6 +688,7 @@ export function useGuestCheckIn() {
       doorFee,
       loggedBy,
       fullName,
+      address,
     }: {
       dlHash: string;
       displayId: string;
@@ -741,14 +758,12 @@ export function useLogDanceSession() {
       tierId,
       totalAmount,
       durationMinutes,
-      customerCount = 1,
       notes,
     }: {
       dancerId: string;
       tierId: string;
       totalAmount: number;
       durationMinutes?: number;
-      customerCount?: number;
       notes?: string;
     }) => {
       // Use RPC to bypass PostgREST schema cache issues on new tables
@@ -806,23 +821,19 @@ export function useLogRoomSession() {
       roomName,
       packageName,
       amount,
-      customerCount = 1,
-      notes,
     }: {
       dancerId: string;
       roomName: string;
       packageName: string;
       amount: number;
-      customerCount?: number;
-      notes?: string;
     }) => {
       const { error } = await supabase.from("room_sessions").insert({
         dancer_id: dancerId,
         room_name: roomName,
         package_name: packageName,
-        amount,
-        customer_count: customerCount,
-        notes,
+        gross_amount: amount,
+        house_cut: Math.round(amount * 0.7),
+        dancer_cut: Math.round(amount * 0.3),
         // entry_time will be set when the session actually starts (exits queue)
       });
       if (error) throw error;
@@ -846,6 +857,55 @@ export function useEntryTiers() {
   });
 }
 
+// ── Active kiosk sessions ──────────────────────────────────────────────────────
+
+export interface KioskSession {
+  id: string;
+  session_token: string;
+  user_id: string;
+  role: string | null;
+  path: string | null;
+  user_agent: string | null;
+  status: "active" | "locked";
+  locked_at: string | null;
+  last_seen: string;
+  created_at: string;
+}
+
+export function useActiveKiosks() {
+  return useQuery({
+    queryKey: ["kiosk_sessions"],
+    queryFn: async () => {
+      const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      const { data, error } = await (supabase as any)
+        .from("kiosk_sessions")
+        .select("*")
+        .gte("last_seen", twoMinAgo)
+        .order("last_seen", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as KioskSession[];
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+export function useSetKioskStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "active" | "locked" }) => {
+      const { error } = await (supabase as any)
+        .from("kiosk_sessions")
+        .update({
+          status,
+          locked_at: status === "locked" ? new Date().toISOString() : null,
+        })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kiosk_sessions"] }),
+  });
+}
+
 export function useDoorStatusToday() {
   const todayStr = today();
   const guestVisits  = useGuestVisits(todayStr, todayStr);
@@ -855,15 +915,29 @@ export function useDoorStatusToday() {
   const rows = useMemo(() => {
     const gv = guestVisits.data ?? [];
     const ce = customerEntries.data ?? [];
-    const allVisits = [...gv.map(v => Number(v.door_fee)), ...ce.map(v => Number(v.door_fee))];
     const tierList = tiers.data ?? [];
 
-    // Group visits by fee amount
-    const countByFee: Record<number, number> = {};
-    allVisits.forEach(fee => { countByFee[fee] = (countByFee[fee] ?? 0) + 1; });
+    // Entries with explicit tier ID — sum guest_count (e.g. 2-for-1 = 2 guests per row)
+    // and count rows separately for revenue (1 card = 1 payment regardless of admits_count)
+    const guestsByTierId: Record<string, number> = {};
+    const cardsByTierId: Record<string, number> = {};
+    ce.forEach((e: any) => {
+      if (e.entry_tier_id) {
+        guestsByTierId[e.entry_tier_id] = (guestsByTierId[e.entry_tier_id] ?? 0) + (Number(e.guest_count) || 1);
+        cardsByTierId[e.entry_tier_id]  = (cardsByTierId[e.entry_tier_id]  ?? 0) + 1;
+      }
+    });
 
-    // Map tiers to rows
-    // Tiers with the same price share the pool (split evenly for display)
+    // Legacy entries (no entry_tier_id) — count by fee, split across same-price tiers
+    const legacyCeByFee: Record<number, number> = {};
+    ce.filter((e: any) => !e.entry_tier_id).forEach((e: any) => {
+      const fee = Number(e.door_fee);
+      legacyCeByFee[fee] = (legacyCeByFee[fee] ?? 0) + 1;
+    });
+    // guest_visits never have tier_id — split by fee
+    const gvByFee: Record<number, number> = {};
+    gv.forEach(v => { const fee = Number(v.door_fee); gvByFee[fee] = (gvByFee[fee] ?? 0) + 1; });
+
     const feeGroups: Record<number, typeof tierList> = {};
     tierList.filter(t => t.is_active).forEach(t => {
       if (!feeGroups[t.price]) feeGroups[t.price] = [];
@@ -872,23 +946,29 @@ export function useDoorStatusToday() {
 
     const result: { id: string; name: string; price: number; guestCount: number; revenue: number }[] = [];
     tierList.filter(t => t.is_active).forEach(tier => {
-      const siblings = feeGroups[tier.price] ?? [tier];
-      const totalForFee = countByFee[tier.price] ?? 0;
-      const share = siblings.length > 1 ? Math.round(totalForFee / siblings.length) : totalForFee;
-      result.push({ id: tier.id, name: tier.name, price: tier.price, guestCount: share, revenue: share * tier.price });
+      const exactGuests = guestsByTierId[tier.id] ?? 0;
+      const exactCards  = cardsByTierId[tier.id]  ?? 0;
+      // Legacy / scan entries split evenly across same-price tiers (1 row = 1 guest assumed)
+      const siblings = feeGroups[tier.price]?.length ?? 1;
+      const legacySplit = Math.round(((legacyCeByFee[tier.price] ?? 0) + (gvByFee[tier.price] ?? 0)) / siblings);
+      const guestCount = exactGuests + legacySplit;
+      const revenue    = exactCards * tier.price + legacySplit * tier.price;
+      result.push({ id: tier.id, name: tier.name, price: tier.price, guestCount, revenue });
     });
 
     return result;
   }, [guestVisits.data, customerEntries.data, tiers.data]);
 
-  // Compute totals directly from raw visits to avoid double-counting when
-  // multiple tiers share the same price point (e.g. Full Cover + 2-for-1 both $10)
-  const allFees = [
-    ...(guestVisits.data ?? []).map(v => Number(v.door_fee)),
+  // Total guests = sum of guest_count on each entry (respects multi-admit tiers)
+  // Total revenue = sum of door_fee (one payment per row regardless of admits_count)
+  const totalGuests = [
+    ...(guestVisits.data  ?? []).map(() => 1),
+    ...(customerEntries.data ?? []).map((e: any) => Number(e.guest_count) || 1),
+  ].reduce((s, n) => s + n, 0);
+  const totalRevenue = [
+    ...(guestVisits.data  ?? []).map(v => Number(v.door_fee)),
     ...(customerEntries.data ?? []).map(v => Number(v.door_fee)),
-  ];
-  const totalGuests  = allFees.length;
-  const totalRevenue = allFees.reduce((s, f) => s + f, 0);
+  ].reduce((s, f) => s + f, 0);
 
   return {
     rows,
@@ -912,7 +992,7 @@ export function useUpdateGuest() {
       flagged?: boolean;
       flagged_reason?: string | null;
     }) => {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("guests")
         .update({ notes, flagged, flagged_reason })
         .eq("id", id);

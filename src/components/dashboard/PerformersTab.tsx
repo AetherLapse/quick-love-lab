@@ -3,6 +3,7 @@ import { AlertCircle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { type Period } from "./mockData";
 import { DateFilter } from "./DateFilter";
 import { useDancerPerformance, useDancers, today } from "@/hooks/useDashboardData";
+import { PanelStack } from "./DraggablePanels";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -144,7 +145,7 @@ function DancerCard({ name, checkIn, isLate, houseFee, danceRevenue, outstanding
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export function PerformersTab() {
-  const [activePeriod, setActivePeriod] = useState<Period>("Today");
+  const [activePeriod, setActivePeriod] = useState<Period>("Tonight");
   const [customRange, setCustomRange]   = useState({ start: today(), end: today() });
 
   const { performance: dancers, isLoading } = useDancerPerformance(activePeriod, customRange);
@@ -181,60 +182,55 @@ export function PerformersTab() {
 
   return (
     <div className="space-y-4">
-      {/* Header + filter */}
+      {/* Header + filter — always pinned at top */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-foreground">Dancer Financials</h2>
           <p className="text-sm text-muted-foreground">Per-dancer breakdown — fees, dances & payouts</p>
         </div>
-        <DateFilter
-          activePeriod={activePeriod}
-          setActivePeriod={setActivePeriod}
-          customRange={customRange}
-          setCustomRange={setCustomRange}
-        />
+        <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
       </div>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Dancers",        value: totals.dancers,  prefix: ""  },
-          { label: "Total Sessions", value: totals.sessions, prefix: ""  },
-          { label: "Dance Gross",    value: totals.gross,    prefix: "$" },
-          { label: "Total Payouts",  value: totals.toPay,    prefix: "$" },
-        ].map(k => (
-          <div key={k.label} className="bg-white rounded-xl border border-border px-4 py-3 shadow-sm">
-            <p className="text-xs text-muted-foreground mb-0.5">{k.label}</p>
-            <p className="text-xl font-bold text-foreground">{k.prefix}{k.value.toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Dancer cards */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : enriched.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-border p-12 text-center text-muted-foreground">
-          No dancer data for this period.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {enriched.map(d => (
-            <DancerCard
-              key={d.id}
-              name={d.name}
-              checkIn={d.checkIn}
-              isLate={d.isLate}
-              houseFee={d.houseFee}
-              danceRevenue={d.gross}
-              outstandingBalance={d.outstandingBalance}
-              sessions={d.sessionDetails}
-            />
-          ))}
-        </div>
-      )}
+      <PanelStack storageKey="performers" panels={[
+        {
+          id: "kpis", label: "Summary KPIs",
+          node: (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Dancers",        value: totals.dancers,  prefix: ""  },
+                { label: "Total Sessions", value: totals.sessions, prefix: ""  },
+                { label: "Dance Gross",    value: totals.gross,    prefix: "$" },
+                { label: "Total Payouts",  value: totals.toPay,    prefix: "$" },
+              ].map(k => (
+                <div key={k.label} className="bg-white rounded-xl border border-border px-4 py-3 shadow-sm">
+                  <p className="text-xs text-muted-foreground mb-0.5">{k.label}</p>
+                  <p className="text-xl font-bold text-foreground">{k.prefix}{k.value.toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          ),
+        },
+        {
+          id: "dancers", label: "Dancer Cards",
+          node: isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : enriched.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-border p-12 text-center text-muted-foreground">
+              No dancer data for this period.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {enriched.map(d => (
+                <DancerCard key={d.id} name={d.name} checkIn={d.checkIn} isLate={d.isLate}
+                  houseFee={d.houseFee} danceRevenue={d.gross}
+                  outstandingBalance={d.outstandingBalance} sessions={d.sessionDetails} />
+              ))}
+            </div>
+          ),
+        },
+      ]} />
     </div>
   );
 }

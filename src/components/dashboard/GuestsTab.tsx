@@ -4,6 +4,7 @@ import {
   QrCode, PenLine, ChevronDown, ChevronRight, Flag, FlagOff,
   StickyNote, Check, X, Eye, EyeOff,
 } from "lucide-react";
+import { PanelStack } from "./DraggablePanels";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -445,154 +446,144 @@ export function GuestsTab() {
         </button>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-card border border-border rounded-xl p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">In Tonight</p>
-          <p className="text-3xl font-bold text-foreground font-heading">{totalToday}</p>
-          <p className="text-xs text-muted-foreground">Current shift</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Returning</p>
-          <p className="text-3xl font-bold text-primary font-heading">{returningToday}</p>
-          <p className="text-xs text-muted-foreground">Recognized IDs</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">New Guests</p>
-          <p className="text-3xl font-bold text-foreground font-heading">{newToday}</p>
-          <p className="text-xs text-muted-foreground">First visit</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Door Revenue</p>
-          <p className="text-3xl font-bold text-success font-heading">${doorRevenue}</p>
-          <p className="text-xs text-muted-foreground">Tonight total</p>
-        </div>
-      </div>
-
-      {/* Sub-nav */}
-      <div className="flex gap-1 bg-secondary/40 rounded-xl p-1 w-fit">
-        {(["live", "directory"] as SubView[]).map((v) => (
-          <button
-            key={v}
-            onClick={() => setSubView(v)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              subView === v
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {v === "live" ? "Tonight's Log" : "Guest Directory"}
-          </button>
-        ))}
-      </div>
-
-      {/* LIVE — Tonight's entry log */}
-      {subView === "live" && (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              <span className="text-sm font-medium text-foreground">Live Entry Log</span>
+      <PanelStack storageKey="guests" panels={[
+        {
+          id: "stats", label: "Stat Cards",
+          node: (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-card border border-border rounded-xl p-4 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">In Tonight</p>
+                <p className="text-3xl font-bold text-foreground font-heading">{totalToday}</p>
+                <p className="text-xs text-muted-foreground">Current shift</p>
+              </div>
+              <div className="bg-card border border-border rounded-xl p-4 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Returning</p>
+                <p className="text-3xl font-bold text-primary font-heading">{returningToday}</p>
+                <p className="text-xs text-muted-foreground">Recognized IDs</p>
+              </div>
+              <div className="bg-card border border-border rounded-xl p-4 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">New Guests</p>
+                <p className="text-3xl font-bold text-foreground font-heading">{newToday}</p>
+                <p className="text-xs text-muted-foreground">First visit</p>
+              </div>
+              <div className="bg-card border border-border rounded-xl p-4 space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Door Revenue</p>
+                <p className="text-3xl font-bold text-success font-heading">${doorRevenue}</p>
+                <p className="text-xs text-muted-foreground">Tonight total</p>
+              </div>
             </div>
-            <span className="text-xs text-muted-foreground">Auto-refreshes every 30s</span>
-          </div>
-
-          {loadingVisits || loadingManual ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-          ) : todayEntries.length === 0 ? (
-            <div className="p-12 text-center space-y-2">
-              <Users className="w-10 h-10 text-muted-foreground/30 mx-auto" />
-              <p className="text-muted-foreground text-sm">No guests logged yet tonight</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {todayEntries.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      entry.type === "scanned" ? "bg-primary/10" : "bg-secondary"
-                    }`}>
-                      {entry.type === "scanned"
-                        ? <QrCode className="w-4 h-4 text-primary" />
-                        : <PenLine className="w-4 h-4 text-muted-foreground" />}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono text-foreground">{entry.displayId}</span>
-                        {entry.isReturning && (
-                          <Badge variant="outline" className="text-xs py-0 border-primary/40 text-primary">
-                            Returning · #{entry.visitCount}
-                          </Badge>
-                        )}
-                        {entry.type === "scanned" && !entry.isReturning && (
-                          <Badge variant="outline" className="text-xs py-0 border-success/40 text-success">New</Badge>
-                        )}
-                        {entry.type === "manual" && (
-                          <Badge variant="outline" className="text-xs py-0 text-muted-foreground">Manual</Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                        <Clock className="w-3 h-3" /> {fmt(entry.time)}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-sm font-semibold text-success">${entry.fee}</span>
+          ),
+        },
+        {
+          id: "log", label: "Tonight's Entry Log",
+          node: (
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                  <span className="text-sm font-medium text-foreground">Live Entry Log</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* DIRECTORY — Expandable guest profiles */}
-      {subView === "directory" && (
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by Guest ID…"
-                className="pl-9 bg-secondary"
-              />
-            </div>
-          </div>
-
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            {/* Table header */}
-            <div className="px-4 py-2.5 border-b border-border bg-secondary/30 grid grid-cols-[1rem_1fr_auto_auto_auto_auto] gap-4 items-center">
-              <span />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Guest</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide hidden sm:block">Status</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide text-right">Visits</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:block text-right">Last Seen</span>
-              <span className="w-5" />
-            </div>
-
-            {loadingDirectory ? (
-              <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-            ) : allGuests.length === 0 ? (
-              <div className="p-12 text-center space-y-2">
-                <UserCheck className="w-10 h-10 text-muted-foreground/30 mx-auto" />
-                <p className="text-muted-foreground text-sm">
-                  {search ? "No guests match that ID" : "No registered guests yet"}
-                </p>
+                <span className="text-xs text-muted-foreground">Auto-refreshes every 30s</span>
               </div>
-            ) : (
-              <div>
-                {(allGuests as GuestRow[]).map((g) => (
-                  <GuestProfileRow key={g.id} guest={g} />
-                ))}
-              </div>
-            )}
-          </div>
 
-          <p className="text-xs text-muted-foreground text-center">
-            All names and details are masked for privacy. Full records are available for authorized official requests.
-          </p>
-        </div>
-      )}
+              {loadingVisits || loadingManual ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+              ) : todayEntries.length === 0 ? (
+                <div className="p-12 text-center space-y-2">
+                  <Users className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+                  <p className="text-muted-foreground text-sm">No guests logged yet tonight</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {todayEntries.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between px-4 py-3 hover:bg-secondary/20 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          entry.type === "scanned" ? "bg-primary/10" : "bg-secondary"
+                        }`}>
+                          {entry.type === "scanned"
+                            ? <QrCode className="w-4 h-4 text-primary" />
+                            : <PenLine className="w-4 h-4 text-muted-foreground" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-mono text-foreground">{entry.displayId}</span>
+                            {entry.isReturning && (
+                              <Badge variant="outline" className="text-xs py-0 border-primary/40 text-primary">
+                                Returning · #{entry.visitCount}
+                              </Badge>
+                            )}
+                            {entry.type === "scanned" && !entry.isReturning && (
+                              <Badge variant="outline" className="text-xs py-0 border-success/40 text-success">New</Badge>
+                            )}
+                            {entry.type === "manual" && (
+                              <Badge variant="outline" className="text-xs py-0 text-muted-foreground">Manual</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                            <Clock className="w-3 h-3" /> {fmt(entry.time)}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-sm font-semibold text-success">${entry.fee}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ),
+        },
+        {
+          id: "directory", label: "Guest Directory",
+          node: (
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by Guest ID…"
+                    className="pl-9 bg-secondary"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-border bg-secondary/30 grid grid-cols-[1rem_1fr_auto_auto_auto_auto] gap-4 items-center">
+                  <span />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Guest</span>
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide hidden sm:block">Status</span>
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide text-right">Visits</span>
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:block text-right">Last Seen</span>
+                  <span className="w-5" />
+                </div>
+
+                {loadingDirectory ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+                ) : allGuests.length === 0 ? (
+                  <div className="p-12 text-center space-y-2">
+                    <UserCheck className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+                    <p className="text-muted-foreground text-sm">
+                      {search ? "No guests match that ID" : "No registered guests yet"}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    {(allGuests as GuestRow[]).map((g) => (
+                      <GuestProfileRow key={g.id} guest={g} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                All names and details are masked for privacy. Full records are available for authorized official requests.
+              </p>
+            </div>
+          ),
+        },
+      ]} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import {
@@ -22,17 +22,6 @@ import { supabase } from "@/integrations/supabase/client";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function useNow() {
-  const [t, setT] = useState(() =>
-    new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-  );
-  useEffect(() => {
-    const id = setInterval(() =>
-      setT(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
-    return () => clearInterval(id);
-  }, []);
-  return t;
-}
 
 const STATUS_STYLES: Record<string, { border: string; bg: string; dot: string; label: string; labelColor: string }> = {
   on_stage:  { border: "border-green-400",  bg: "bg-green-50",   dot: "bg-green-500",  label: "ON STAGE", labelColor: "text-green-600" },
@@ -108,12 +97,10 @@ function StageStatusStrip({
   current,
   queue,
   onNext,
-  onClearStage,
 }: {
   current: StageEntry | null;
   queue: StageEntry[];
   onNext: () => void;
-  onClearStage: () => void;
 }) {
   const elapsed = useElapsed(current?.startTime ?? null);
 
@@ -171,7 +158,18 @@ export default function DoorCheckIn() {
   const { scanAdd, manualAdd }        = useGuestCheckIn();
   const logDance  = useLogDanceSession();
   const logRoom   = useLogRoomSession();
-  const { current: stageOccupied, queue: stageQueue, putOnStage, addToQueue, advanceQueue, clearStage } = useStage();
+  const { current: stageOccupied, queue: stageQueue, putOnStage, addToQueue, advanceQueue } = useStage();
+
+  // ── Vendors (for distributor-tracked entry tiers) ─────────────────────────
+  const [vendors, setVendors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    (supabase as any).from("vendors").select("id, name").eq("is_active", true).order("name")
+      .then(({ data }: any) => setVendors(data ?? []));
+  }, []);
+
+  // Pending vendor-tracked tier (shows vendor picker before logging)
+  const [pendingTier, setPendingTier] = useState<{ id: string; name: string; price: number; admits_count: number } | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState("");
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activePanel, setActivePanel] = useState<"door" | "checkin">("door");
@@ -199,10 +197,9 @@ export default function DoorCheckIn() {
     try {
       await logRoom.mutateAsync({
         dancerId: primaryDancer.id,
-        roomName: "Queue", // Placeholder, will be assigned when dequeued
+        roomName: "Queue",
         packageName: selectedTier.name,
         amount,
-        customerCount: selectedDancers.length,
       });
       toast.success(`Room session for ${primaryDancer.stage_name} added to queue`);
       resetAll();
@@ -227,7 +224,6 @@ export default function DoorCheckIn() {
     setSelectedTier(null);
   };
 
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   const getCurrentUserId = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -235,15 +231,32 @@ export default function DoorCheckIn() {
   };
 
   // ── Entry tier quick-add ─────────────────────────────────────────────────
-  const handleEntryTier = async (price: number) => {
+  const handleEntryTier = async (tierId: string, price: number, admitsCount: number, vendorId?: string) => {
     const uid = await getCurrentUserId();
     if (!uid) return;
     try {
-      await manualAdd.mutateAsync({ doorFee: price, loggedBy: uid });
-      toast.success(`Entry logged — $${price}`);
+      await manualAdd.mutateAsync({ doorFee: price, loggedBy: uid, tierId, guestCount: admitsCount, vendorId: vendorId || undefined });
+      const guestLabel = admitsCount > 1 ? `${admitsCount} guests` : "1 guest";
+      toast.success(`Entry logged — ${guestLabel} · $${price}${vendorId ? " · vendor tracked" : ""}`);
     } catch (e: any) {
       toast.error(e.message ?? "Entry failed");
     }
+  };
+
+  const handleTierClick = (tier: { id: string; name: string; price: number; admits_count: number; requires_distributor: boolean }) => {
+    if (tier.requires_distributor) {
+      setPendingTier(tier);
+      setSelectedVendorId("");
+    } else {
+      handleEntryTier(tier.id, tier.price, tier.admits_count);
+    }
+  };
+
+  const confirmVendorEntry = async () => {
+    if (!pendingTier) return;
+    await handleEntryTier(pendingTier.id, pendingTier.price, pendingTier.admits_count, selectedVendorId || undefined);
+    setPendingTier(null);
+    setSelectedVendorId("");
   };
 
   // ── Scan entry ───────────────────────────────────────────────────────────
@@ -356,7 +369,6 @@ export default function DoorCheckIn() {
           current={stageOccupied}
           queue={stageQueue}
           onNext={advanceQueue}
-          onClearStage={clearStage}
         />
       )}
 
@@ -369,22 +381,65 @@ export default function DoorCheckIn() {
             {entryTiers.filter(t => t.is_active).map(tier => (
               <button
                 key={tier.id}
-                onClick={() => handleEntryTier(tier.price)}
+                onClick={() => handleTierClick(tier as any)}
                 disabled={manualAdd.isPending}
-                className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-xl border-2 border-border bg-white hover:border-primary/60 hover:bg-primary/5 transition-all disabled:opacity-50"
+                className={`flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-xl border-2 transition-all disabled:opacity-50
+                  ${pendingTier?.id === tier.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-white hover:border-primary/60 hover:bg-primary/5"}`}
               >
                 <span className="text-sm font-semibold text-foreground">{tier.name}</span>
                 <span className="text-xs text-muted-foreground">
-                  {tier.price === 0 ? "Free" : tier.admits_count > 1 ? `$${tier.price} / ${tier.admits_count} people` : `$${tier.price}`}
+                  {tier.price === 0 ? "Free" : (tier as any).admits_count > 1 ? `$${tier.price} / ${(tier as any).admits_count} people` : `$${tier.price}`}
                 </span>
               </button>
             ))}
           </div>
 
-          {/* ── ID Scanner (collapsible) ─────────────────────────────────── */}
+          {/* ── Vendor picker (shown when a distributor-tracked tier is selected) ── */}
+          {pendingTier && (
+            <div className="bg-white rounded-2xl border-2 border-primary/30 p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-bold text-foreground">{pendingTier.name}</p>
+                  <p className="text-xs text-muted-foreground">Select the vendor / distributor for this card</p>
+                </div>
+                <button onClick={() => setPendingTier(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {vendors.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No active vendors — add vendors in Settings → Promo Codes</p>
+                ) : (
+                  vendors.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVendorId(v.id)}
+                      className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
+                        ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
+                    >
+                      {v.name}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-4">
+                <button
+                  onClick={() => confirmVendorEntry()}
+                  disabled={manualAdd.isPending}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
+                >
+                  {manualAdd.isPending ? "Logging…" : `Confirm — $${pendingTier.price}${selectedVendorId ? "" : " (no vendor)"}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Card Scanner (collapsible) ────────────────────────────────── */}
           <details className="bg-white rounded-2xl border border-border shadow-sm">
             <summary className="px-5 py-3 text-sm font-semibold text-foreground cursor-pointer select-none list-none flex items-center justify-between">
-              <span>ID Scanner</span>
+              <span>Card Scanner</span>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </summary>
             <div className="px-5 pb-5 pt-1">

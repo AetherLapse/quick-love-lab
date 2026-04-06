@@ -7,9 +7,11 @@ import { PerformersTab } from "@/components/dashboard/PerformersTab";
 import { ReportsTab } from "@/components/dashboard/ReportsTab";
 import { SettingsTab } from "@/components/dashboard/SettingsTab";
 import { GuestsTab } from "@/components/dashboard/GuestsTab";
+import { StageManagementTab } from "@/components/dashboard/StageManagementTab";
+import { KiosksTab } from "@/components/dashboard/KiosksTab";
 import { useAuth } from "@/hooks/useAuth";
 
-const tabs = ["Summary", "Revenue", "Performers", "Guests", "Reports", "Settings"] as const;
+const tabs = ["Summary", "Revenue", "Performers", "Guests", "Stage", "Reports", "Settings", "Kiosks"] as const;
 type Tab = typeof tabs[number];
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -17,8 +19,10 @@ const TAB_TITLES: Record<Tab, string> = {
   Revenue:    "Revenue",
   Performers: "Dancers",
   Guests:     "Guests",
+  Stage:      "Stage Management",
   Reports:    "Reports",
   Settings:   "Settings",
+  Kiosks:     "Active Kiosks",
 };
 
 function useCurrentTime() {
@@ -56,30 +60,15 @@ export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
         </div>
       </div>
 
-      {/* Mobile tab pills (hidden on desktop — use sidebar instead) */}
-      <div className="md:hidden flex overflow-x-auto gap-1 pb-3 mb-4 -mx-4 px-4">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-              activeTab === tab
-                ? "bg-primary text-white"
-                : "bg-secondary text-muted-foreground"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
       {/* Content */}
       {activeTab === "Summary"    && <SummaryTab />}
       {activeTab === "Revenue"    && <RevenueTab />}
       {activeTab === "Performers" && <PerformersTab />}
       {activeTab === "Guests"     && <GuestsTab />}
+      {activeTab === "Stage"      && <StageManagementTab />}
       {activeTab === "Reports"    && <ReportsTab />}
       {activeTab === "Settings"   && <SettingsTab />}
+      {activeTab === "Kiosks"     && <KiosksTab />}
     </AppLayout>
   );
 }

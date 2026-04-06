@@ -1,33 +1,70 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 
 export interface StageEntry {
   dancerId: string;
   dancerName: string;
   startTime: Date;
+  inRoom?: boolean; // currently in a VIP room session
 }
 
+const AUTO_ADVANCE_SECS = 600; // 10 minutes
+
 interface StageContextType {
-  current: StageEntry | null;
-  queue: StageEntry[];
-  putOnStage: (dancerId: string, dancerName: string) => void;
-  addToQueue: (dancerId: string, dancerName: string) => void;
-  advanceQueue: () => void;         // move first in queue onto stage
-  removeFromQueue: (dancerId: string) => void;
-  clearStage: () => void;
+  current:          StageEntry | null;
+  queue:            StageEntry[];
+  paused:           boolean;
+  secondsUntilNext: number;
+  putOnStage:       (dancerId: string, dancerName: string) => void;
+  addToQueue:       (dancerId: string, dancerName: string) => void;
+  advanceQueue:     () => void;
+  removeFromQueue:  (dancerId: string) => void;
+  reorderQueue:     (fromIdx: number, toIdx: number) => void;
+  setFullQueue:     (entries: StageEntry[]) => void;
+  togglePause:      () => void;
+  resetTimer:       () => void;
+  clearStage:       () => void;
 }
 
 const StageContext = createContext<StageContextType | undefined>(undefined);
 
 export function StageProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<StageEntry | null>(null);
-  const [queue, setQueue]     = useState<StageEntry[]>([]);
+  const [current,          setCurrent]          = useState<StageEntry | null>(null);
+  const [queue,            setQueue]            = useState<StageEntry[]>([]);
+  const [paused,           setPaused]           = useState(false);
+  const [secondsUntilNext, setSecondsUntilNext] = useState(AUTO_ADVANCE_SECS);
+  const pausedRef = useRef(paused);
+  const currentRef = useRef(current);
+  pausedRef.current  = paused;
+  currentRef.current = current;
 
+  // ── Auto-advance countdown ────────────────────────────────────────────────
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (pausedRef.current || !currentRef.current) return;
+      setSecondsUntilNext(s => {
+        if (s <= 1) {
+          // Advance: move next dancer in queue onto stage
+          setQueue(prev => {
+            const [next, ...rest] = prev;
+            if (next) setCurrent({ ...next, startTime: new Date() });
+            else      setCurrent(null);
+            return rest;
+          });
+          return AUTO_ADVANCE_SECS;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Actions ───────────────────────────────────────────────────────────────
   const putOnStage = (dancerId: string, dancerName: string) => {
     setCurrent({ dancerId, dancerName, startTime: new Date() });
+    setSecondsUntilNext(AUTO_ADVANCE_SECS);
   };
 
   const addToQueue = (dancerId: string, dancerName: string) => {
-    // Prevent duplicates
     setQueue(prev =>
       prev.some(e => e.dancerId === dancerId)
         ? prev
@@ -39,19 +76,40 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setQueue(prev => {
       const [next, ...rest] = prev;
       if (next) setCurrent({ ...next, startTime: new Date() });
-      else setCurrent(null);
+      else      setCurrent(null);
       return rest;
     });
+    setSecondsUntilNext(AUTO_ADVANCE_SECS);
   };
 
   const removeFromQueue = (dancerId: string) => {
     setQueue(prev => prev.filter(e => e.dancerId !== dancerId));
   };
 
-  const clearStage = () => setCurrent(null);
+  const reorderQueue = (fromIdx: number, toIdx: number) => {
+    setQueue(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
+  const setFullQueue = (entries: StageEntry[]) => {
+    setQueue(entries);
+  };
+
+  const togglePause = () => setPaused(p => !p);
+  const resetTimer  = () => setSecondsUntilNext(AUTO_ADVANCE_SECS);
+  const clearStage  = () => setCurrent(null);
 
   return (
-    <StageContext.Provider value={{ current, queue, putOnStage, addToQueue, advanceQueue, removeFromQueue, clearStage }}>
+    <StageContext.Provider value={{
+      current, queue, paused, secondsUntilNext,
+      putOnStage, addToQueue, advanceQueue, removeFromQueue,
+      reorderQueue, setFullQueue,
+      togglePause, resetTimer, clearStage,
+    }}>
       {children}
     </StageContext.Provider>
   );

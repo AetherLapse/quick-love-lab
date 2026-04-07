@@ -405,17 +405,21 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
 function EditStaffModal({ member, onClose, onSuccess }: {
   member: StaffMember | null; onClose: () => void; onSuccess: () => void;
 }) {
-  const [name, setName]       = useState("");
-  const [role, setRole]       = useState<AppRole>("door_staff");
-  const [resetEmail, setResetEmail] = useState("");
-  const [saving, setSaving]   = useState(false);
-  const [sending, setSending] = useState(false);
+  const [name, setName]         = useState("");
+  const [role, setRole]         = useState<AppRole>("door_staff");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPwd, setShowPwd]   = useState(false);
+  const [pinCode, setPinCode]   = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [settingPwd, setSettingPwd] = useState(false);
+
 
   useEffect(() => {
     if (member) {
       setName(member.full_name);
       setRole(member.role ?? "door_staff");
-      setResetEmail("");
+      setNewPassword("");
+      setPinCode("");
     }
   }, [member]);
 
@@ -434,24 +438,29 @@ function EditStaffModal({ member, onClose, onSuccess }: {
     // Update role
     await supabase.from("user_roles").delete().eq("user_id", member.user_id);
     const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: member.user_id, role });
-    setSaving(false);
-    if (roleErr) { toast.error(roleErr.message); return; }
+    if (roleErr) { setSaving(false); toast.error(roleErr.message); return; }
 
+    // Save PIN for door_staff
+    if (role === "door_staff" && pinCode.trim()) {
+      await supabase.from("profiles").update({ pin_code: pinCode.trim() }).eq("user_id", member.user_id);
+    }
+
+    setSaving(false);
     toast.success("Staff profile updated");
     onSuccess(); onClose();
   };
 
-  const handlePasswordReset = async () => {
-    if (!resetEmail.trim() || !resetEmail.includes("@")) {
-      toast.error("Enter the staff member's email address");
-      return;
-    }
-    setSending(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
-    setSending(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`Password reset email sent to ${resetEmail}`);
-    setResetEmail("");
+  const handleSetPassword = async () => {
+    if (!member) return;
+    if (newPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    setSettingPwd(true);
+    const { error } = await supabase.functions.invoke("set-staff-password", {
+      body: { user_id: member.user_id, new_password: newPassword },
+    });
+    setSettingPwd(false);
+    if (error) { toast.error(error.message ?? "Failed to set password"); return; }
+    toast.success("Password updated");
+    setNewPassword("");
   };
 
   return (
@@ -481,16 +490,45 @@ function EditStaffModal({ member, onClose, onSuccess }: {
           </div>
         </div>
 
-        {/* Password reset */}
+        {/* Door Staff PIN */}
+        {role === "door_staff" && (
+          <div className="space-y-1.5">
+            <Label>Door Staff PIN</Label>
+            <Input
+              type="text"
+              inputMode="numeric"
+              maxLength={8}
+              value={pinCode}
+              onChange={e => setPinCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="Enter PIN (digits only)"
+              className="bg-white"
+            />
+          </div>
+        )}
+
+        {/* Set Password */}
         <div className="rounded-xl border border-border bg-secondary/30 p-4 space-y-2">
-          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Reset Password</p>
-          <p className="text-xs text-muted-foreground">Enter their email to send a password reset link.</p>
+          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Set New Password</p>
           <div className="flex gap-2">
-            <Input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)}
-              placeholder="staff@2nyt.com" className="bg-white" />
-            <Button variant="outline" onClick={handlePasswordReset} disabled={sending} className="shrink-0 gap-1.5">
-              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-              Send
+            <div className="relative flex-1">
+              <Input
+                type={showPwd ? "text" : "password"}
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="New password (min 6 chars)"
+                className="bg-white pr-9"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <Button variant="outline" onClick={handleSetPassword} disabled={settingPwd || newPassword.length < 6} className="shrink-0 gap-1.5">
+              {settingPwd ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Set
             </Button>
           </div>
         </div>

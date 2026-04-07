@@ -31,9 +31,8 @@ const ROLE_LABELS: Record<AppRole, string> = {
   room_attendant: "Room Attendant",
 };
 
-const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
 
-const EMPTY_STAFF_FORM = { full_name: "", email: "", password: "", role: "door_staff" as AppRole };
+const EMPTY_STAFF_FORM = { full_name: "", email: "", password: "", role: "door_staff" as AppRole, pin_code: "" };
 
 const EMPTY_FORM = {
   stage_name: "",
@@ -610,9 +609,13 @@ export function SettingsTab() {
     setStaffSaving(true);
 
     if (staffEditId && staffEditUserId) {
-      // Edit: update profile name + role
+      // Edit: update profile name + role (+ PIN if door_staff)
+      const profileUpdate: Record<string, unknown> = { full_name: staffForm.full_name.trim() };
+      if (staffForm.role === "door_staff" && staffForm.pin_code.trim()) {
+        profileUpdate.pin_code = staffForm.pin_code.trim();
+      }
       const [profileRes, roleRes] = await Promise.all([
-        supabase.from("profiles").update({ full_name: staffForm.full_name.trim() }).eq("id", staffEditId),
+        supabase.from("profiles").update(profileUpdate).eq("id", staffEditId),
         supabase.from("user_roles").update({ role: staffForm.role }).eq("user_id", staffEditUserId),
       ]);
       setStaffSaving(false);
@@ -626,22 +629,17 @@ export function SettingsTab() {
     } else {
       // Add: call edge function to create auth user + role
       try {
-        const res = await fetch(
-          "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/create-staff-user",
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${ANON_JWT}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: staffForm.email.trim(),
-              password: staffForm.password,
-              full_name: staffForm.full_name.trim(),
-              role: staffForm.role,
-            }),
-          }
-        );
-        const data = await res.json();
+        const { error: fnError } = await supabase.functions.invoke("create-staff-user", {
+          body: {
+            email: staffForm.email.trim(),
+            password: staffForm.password,
+            full_name: staffForm.full_name.trim(),
+            role: staffForm.role,
+            ...(staffForm.role === "door_staff" && staffForm.pin_code.trim() ? { pin_code: staffForm.pin_code.trim() } : {}),
+          },
+        });
         setStaffSaving(false);
-        if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+        if (fnError) throw new Error(fnError.message ?? "Failed to add staff");
         toast.success("Staff member added.");
         setStaffDialogOpen(false);
         refetchProfiles();
@@ -982,6 +980,21 @@ export function SettingsTab() {
                 <option value="manager">Manager</option>
               </select>
             </div>
+
+            {staffForm.role === "door_staff" && (
+              <div>
+                <Label>Door Staff PIN</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={8}
+                  value={staffForm.pin_code}
+                  onChange={(e) => setStaffForm({ ...staffForm, pin_code: e.target.value.replace(/\D/g, "") })}
+                  placeholder="Enter PIN (digits only)"
+                  className="bg-secondary mt-1"
+                />
+              </div>
+            )}
 
             <Button onClick={handleSaveStaff} disabled={staffSaving} className="w-full py-3">
               {staffSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : staffEditId ? "Save Changes" : "Add Staff Member"}

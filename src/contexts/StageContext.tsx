@@ -16,7 +16,8 @@ interface StageContextType {
   secondsUntilNext: number;
   putOnStage:       (dancerId: string, dancerName: string) => void;
   addToQueue:       (dancerId: string, dancerName: string) => void;
-  advanceQueue:     () => void;
+  advanceQueue:     () => void;  // dancer is DONE — clear stage, leave queue unchanged
+  offStageEarly:    () => void;  // dancer left early — return to front of queue
   removeFromQueue:  (dancerId: string) => void;
   reorderQueue:     (fromIdx: number, toIdx: number) => void;
   setFullQueue:     (entries: StageEntry[]) => void;
@@ -59,8 +60,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Actions ───────────────────────────────────────────────────────────────
+  // Put a dancer on stage and remove them from the queue
   const putOnStage = (dancerId: string, dancerName: string) => {
     setCurrent({ dancerId, dancerName, startTime: new Date() });
+    setQueue(prev => prev.filter(e => e.dancerId !== dancerId));
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
   };
 
@@ -72,13 +75,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  // Dancer is done — clear stage, queue unchanged (next shows in grey)
   const advanceQueue = () => {
-    setQueue(prev => {
-      const [next, ...rest] = prev;
-      if (next) setCurrent({ ...next, startTime: new Date() });
-      else      setCurrent(null);
-      return rest;
-    });
+    setCurrent(null);
+    setSecondsUntilNext(AUTO_ADVANCE_SECS);
+  };
+
+  // Dancer left early — return them to front of queue
+  const offStageEarly = () => {
+    setCurrent(null);
+    setQueue(prev => current ? [current, ...prev] : prev);
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
   };
 
@@ -106,7 +112,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
   return (
     <StageContext.Provider value={{
       current, queue, paused, secondsUntilNext,
-      putOnStage, addToQueue, advanceQueue, removeFromQueue,
+      putOnStage, addToQueue, advanceQueue, offStageEarly, removeFromQueue,
       reorderQueue, setFullQueue,
       togglePause, resetTimer, clearStage,
     }}>

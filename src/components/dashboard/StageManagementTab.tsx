@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Mic2, Play, Pause, SkipForward, RotateCcw, GripVertical,
-  UserMinus, RefreshCw, Clock, BedDouble,
+  UserMinus, RefreshCw, Clock, BedDouble, ArrowUpFromLine, ArrowDownToLine,
 } from "lucide-react";
 import { useStage, useElapsed, type StageEntry } from "@/contexts/StageContext";
 import { useAttendanceLogs, useActiveRoomSessions, useActiveDancers, today } from "@/hooks/useDashboardData";
@@ -42,8 +42,8 @@ function CountdownRing({ seconds, total = 600, paused }: { seconds: number; tota
 
 // ── On-Stage card ─────────────────────────────────────────────────────────────
 
-function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onPause, onReset }:
-  { entry: StageEntry; paused: boolean; secondsUntilNext: number; onAdvance: () => void; onPause: () => void; onReset: () => void }) {
+function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, onPause, onReset }:
+  { entry: StageEntry; paused: boolean; secondsUntilNext: number; onAdvance: () => void; onOffStage: () => void; onPause: () => void; onReset: () => void }) {
   const elapsed = useElapsed(entry.startTime);
   return (
     <div className="bg-white rounded-2xl border-2 border-green-400 p-5 shadow-sm">
@@ -71,7 +71,7 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onPause, onRe
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 mt-4">
+      <div className="flex flex-wrap gap-2 mt-4">
         <button
           onClick={onPause}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all
@@ -88,6 +88,12 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onPause, onRe
         </button>
         <div className="flex-1" />
         <button
+          onClick={onOffStage}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-destructive/50 text-destructive hover:bg-destructive/10 text-sm font-medium transition-all"
+        >
+          <ArrowDownToLine className="w-4 h-4" /> Off Stage
+        </button>
+        <button
           onClick={onAdvance}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-all"
         >
@@ -100,17 +106,41 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onPause, onRe
 
 // ── Empty stage card ──────────────────────────────────────────────────────────
 
-function EmptyStageCard({ onStart }: { onStart: () => void }) {
+function EmptyStageCard({ onStart, queue, onPutOnStage }: {
+  onStart: () => void;
+  queue: StageEntry[];
+  onPutOnStage: (id: string, name: string) => void;
+}) {
   return (
-    <div className="bg-white rounded-2xl border-2 border-dashed border-border p-8 text-center shadow-sm">
-      <Mic2 className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-      <p className="text-sm font-semibold text-muted-foreground mb-4">No one on stage</p>
-      <button
-        onClick={onStart}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-all mx-auto"
-      >
-        <Play className="w-4 h-4" /> Start Rotation
-      </button>
+    <div className="bg-white rounded-2xl border-2 border-dashed border-border p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Mic2 className="w-5 h-5 opacity-40" />
+          <span className="text-sm font-semibold">Stage is empty</span>
+        </div>
+        <button
+          onClick={onStart}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-all"
+        >
+          <Play className="w-3.5 h-3.5" /> Auto-Start Rotation
+        </button>
+      </div>
+      {queue.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Put on stage manually:</p>
+          {queue.slice(0, 4).map(entry => (
+            <button
+              key={entry.dancerId}
+              onClick={() => onPutOnStage(entry.dancerId, entry.dancerName)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all text-left"
+            >
+              <ArrowUpFromLine className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-medium text-foreground">{entry.dancerName}</span>
+              {entry.inRoom && <span className="ml-auto text-[10px] text-pink-500 bg-pink-50 px-2 py-0.5 rounded-full">IN ROOM</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -180,7 +210,7 @@ function QueueRow({
 export function StageManagementTab() {
   const {
     current, queue, paused, secondsUntilNext,
-    advanceQueue, removeFromQueue, reorderQueue,
+    advanceQueue, offStageEarly, removeFromQueue, reorderQueue,
     setFullQueue, togglePause, resetTimer, putOnStage,
   } = useStage();
 
@@ -241,13 +271,8 @@ export function StageManagementTab() {
         }));
     }
 
+    // Just populate the queue — attendant manually picks who goes On Stage
     setFullQueue(entries);
-
-    if (!current && entries.length > 0) {
-      const [first, ...rest] = entries;
-      putOnStage(first.dancerId, first.dancerName);
-      setFullQueue(rest);
-    }
   };
 
   const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
@@ -281,11 +306,16 @@ export function StageManagementTab() {
           paused={paused}
           secondsUntilNext={secondsUntilNext}
           onAdvance={advanceQueue}
+          onOffStage={offStageEarly}
           onPause={togglePause}
           onReset={resetTimer}
         />
       ) : (
-        <EmptyStageCard onStart={buildQueue} />
+        <EmptyStageCard
+          onStart={buildQueue}
+          queue={queueWithRoom}
+          onPutOnStage={putOnStage}
+        />
       )}
 
       {/* ── Queue ───────────────────────────────────────────────────────── */}

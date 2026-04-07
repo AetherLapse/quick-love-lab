@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, password, full_name, role } = await req.json();
+    const { email, password, full_name, role, pin_code } = await req.json();
 
     if (!email || !password || !full_name || !role) {
       return new Response(JSON.stringify({ error: "email, password, full_name, and role are required" }), {
@@ -21,7 +21,7 @@ serve(async (req) => {
       });
     }
 
-    const validRoles = ["manager", "door_staff", "room_attendant"];
+    const validRoles = ["manager", "door_staff", "room_attendant", "house_mom"];
     if (!validRoles.includes(role)) {
       return new Response(JSON.stringify({ error: "Invalid role" }), {
         status: 400,
@@ -52,9 +52,16 @@ serve(async (req) => {
       .insert({ user_id: userId, role });
 
     if (roleError) {
-      // Roll back user creation if role insert fails
       await supabaseAdmin.auth.admin.deleteUser(userId);
       throw roleError;
+    }
+
+    // Store PIN for door_staff
+    if (role === "door_staff" && pin_code) {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ pin_code })
+        .eq("user_id", userId);
     }
 
     return new Response(JSON.stringify({ user_id: userId }), {

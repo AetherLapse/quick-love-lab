@@ -15,6 +15,8 @@ import {
   useGuestCheckIn,
   useLogDanceSession,
   useLogRoomSession,
+  useExtendRoomSession,
+  useActiveRoomSessions,
   useDoorStatusToday,
   useClubSettings,
 } from "@/hooks/useDashboardData";

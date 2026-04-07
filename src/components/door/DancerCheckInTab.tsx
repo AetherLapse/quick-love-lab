@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search } from "lucide-react";
 import { useDancerCheckIn } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface DancerLogEntry {
   name: string;
@@ -15,7 +16,7 @@ interface DancerCheckInTabProps {
 }
 
 type Step = "idle" | "face-camera" | "face-processing" | "face-failed" | "pin" | "success";
-type EnrollStep = "lookup" | "camera" | "processing" | "done" | "already-enrolled";
+type EnrollStep = "lookup" | "camera" | "processing" | "done" | "already-enrolled" | "error";
 
 // ─── Enrollment panel ─────────────────────────────────────────────────────────
 function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
@@ -80,34 +81,26 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
     setEnrolling(true);
 
     const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token ?? "";
 
     try {
-      const res = await fetch(
-        "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-index",
-        {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ dancer_id: dancer.id, image_base64: base64 }),
-        }
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-
-      // Mark enrolled
-      const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from("dancers").update({
-        is_enrolled: true,
-        enrolled_at: new Date().toISOString(),
-        enrolled_by: user?.id ?? null,
-      }).eq("id", dancer.id);
+      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+      const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-index", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": ANON_KEY,
+          "Authorization": `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({ dancer_id: dancer.id, image_base64: base64 }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? json?.message ?? `HTTP ${res.status}: ${JSON.stringify(json)}`);
+      if (!json?.success) throw new Error(json?.error ?? json?.message ?? "Enrollment failed");
 
       setEnrollStep("done");
     } catch (e: any) {
       setError(e.message ?? "Enrollment failed. Try again.");
-      setEnrollStep("camera");
-      startCamera();
+      setEnrollStep("error");
     } finally {
       setEnrolling(false);
     }
@@ -174,6 +167,25 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      {/* Step: error */}
+      {enrollStep === "error" && (
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-red-800 text-sm">Enrollment Failed</p>
+              <p className="text-sm text-red-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => { setError(null); setEnrollStep("camera"); startCamera(); }}
+            className="w-full py-2.5 rounded-xl border border-border text-sm font-medium hover:border-primary/50 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+
       {/* Step: already enrolled */}
       {enrollStep === "already-enrolled" && dancer && (
         <div className="space-y-4">
@@ -208,6 +220,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
 }
 
 export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps) {
+  const { user, role } = useAuth();
   const [mode, setMode] = useState<"checkin" | "enroll">("checkin");
   const [step, setStep] = useState<Step>("idle");
   const [result, setResult] = useState<{ name: string; fee: number } | null>(null);
@@ -216,6 +229,12 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const [pinError, setPinError] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
   const [dancerLog, setDancerLog] = useState<DancerLogEntry[]>([]);
+
+  // PIN verification before enrollment (door_staff only)
+  const [showPinVerify, setShowPinVerify] = useState(false);
+  const [enrollPin, setEnrollPin] = useState("");
+  const [enrollPinError, setEnrollPinError] = useState(false);
+  const [verifyingPin, setVerifyingPin] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -239,6 +258,13 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   useEffect(() => {
     return () => stopFaceCamera();
   }, [stopFaceCamera]);
+
+  const applyLateFee = (baseFee: number): number => {
+    const now = new Date();
+    const cutoff = new Date();
+    cutoff.setHours(20, 30, 0, 0); // 8:30 PM
+    return now >= cutoff ? baseFee + 20 : baseFee;
+  };
 
   const performCheckIn = useCallback(
     async (dancerId: string, stageName: string, entranceFee: number, method: "pin" | "facial") => {
@@ -290,22 +316,24 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
       const base64 = dataUrl.split(",")[1];
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
-      const token = sessionData.session?.access_token ?? ANON_JWT;
+      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
       const res = await fetch(
         "https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/rekognition-search",
         {
           method: "POST",
-          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": ANON_KEY,
+            "Authorization": `Bearer ${ANON_KEY}`,
+          },
           body: JSON.stringify({ image_base64: base64 }),
         }
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? data?.message ?? `HTTP ${res.status}`);
 
       if (data.matched) {
-        await performCheckIn(data.dancer_id, data.stage_name, Number(data.entrance_fee), "facial");
+        await performCheckIn(data.dancer_id, data.stage_name, applyLateFee(Number(data.entrance_fee)), "facial");
       } else {
         const reasonMessages: Record<string, string> = {
           no_face: "No face detected. Please look directly at the camera.",
@@ -333,7 +361,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       }
       setPin("");
       setPinError(false);
-      await performCheckIn(dancer.id, dancer.stage_name, Number(dancer.entrance_fee), "pin");
+      await performCheckIn(dancer.id, dancer.stage_name, applyLateFee(Number(dancer.entrance_fee)), "pin");
     } catch {
       setPinError(true);
       setPin("");
@@ -359,12 +387,74 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     setFaceError(null);
   };
 
+  const handleEnrollClick = () => {
+    if (role === "door_staff") {
+      setEnrollPin("");
+      setEnrollPinError(false);
+      setShowPinVerify(true);
+    } else {
+      setMode("enroll");
+    }
+  };
+
+  const handleVerifyEnrollPin = async () => {
+    if (!user) return;
+    setVerifyingPin(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("pin_code")
+      .eq("user_id", user.id)
+      .single();
+    setVerifyingPin(false);
+    if (!data?.pin_code || data.pin_code !== enrollPin) {
+      setEnrollPinError(true);
+      return;
+    }
+    setShowPinVerify(false);
+    setMode("enroll");
+  };
+
   if (mode === "enroll") {
     return <EnrollDancerPanel onBack={() => setMode("checkin")} />;
   }
 
   return (
     <div className="space-y-4">
+      {/* PIN Verify Overlay */}
+      {showPinVerify && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+          <div className="bg-background rounded-2xl p-6 w-full max-w-xs shadow-xl space-y-4">
+            <p className="text-sm font-semibold text-center text-foreground">Enter Your Staff PIN to Continue</p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={8}
+              autoFocus
+              value={enrollPin}
+              onChange={e => { setEnrollPin(e.target.value.replace(/\D/g, "")); setEnrollPinError(false); }}
+              className={`w-full border rounded-xl px-4 py-3 text-center text-xl tracking-[0.5em] bg-white focus:outline-none ${enrollPinError ? "border-destructive" : "border-border"}`}
+              placeholder="••••"
+            />
+            {enrollPinError && <p className="text-destructive text-xs text-center">Incorrect PIN</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowPinVerify(false)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVerifyEnrollPin}
+                disabled={verifyingPin || enrollPin.length === 0}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {verifyingPin ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="glass-card p-6">
 
         {/* IDLE */}
@@ -385,7 +475,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
             </button>
             <div className="border-t border-border/40 mt-3 pt-3">
               <button
-                onClick={() => setMode("enroll")}
+                onClick={handleEnrollClick}
                 className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors py-1.5"
               >
                 <UserPlus className="w-4 h-4" /> New Dancer Enrollment →

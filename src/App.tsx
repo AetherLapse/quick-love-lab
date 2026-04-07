@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { StageProvider } from "@/contexts/StageContext";
+import RequireRole from "@/components/RequireRole";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -13,34 +14,46 @@ import PrivateRooms from "./pages/PrivateRooms";
 import FloorView from "./pages/FloorView";
 import ClubSettings from "./pages/ClubSettings";
 import NotFound from "./pages/NotFound";
-import DemoLogin from "./components/DemoLogin";
 
 const queryClient = new QueryClient();
+
+// Role shorthand groups
+const OWNER          = ["admin", "owner"]                                            as const;
+const OWNER_MANAGER  = ["admin", "owner", "manager"]                                 as const;
+const DASHBOARD_ROLES = ["admin", "owner", "manager", "house_mom"]                  as const;
+const DOOR_ROLES     = ["admin", "owner", "manager", "door_staff"]                  as const;
+const STAGE_ROLES    = ["admin", "owner", "manager", "house_mom", "room_attendant"] as const;
+const REPORTS_ROLES  = ["admin", "owner", "manager", "door_staff"]                  as const;
+const ROOMS_ROLES    = ["admin", "owner", "manager", "room_attendant"]              as const;
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <StageProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/door" element={<DemoLogin role="admin"><DoorCheckIn /></DemoLogin>} />
-            <Route path="/rooms" element={<DemoLogin role="admin"><PrivateRooms /></DemoLogin>} />
-            <Route path="/dashboard" element={<DemoLogin role="admin"><Dashboard /></DemoLogin>} />
-            <Route path="/floor" element={<DemoLogin role="manager"><FloorView /></DemoLogin>} />
-            <Route path="/settings" element={<DemoLogin role="admin"><ClubSettings /></DemoLogin>} />
-            <Route path="/stage"   element={<DemoLogin role="admin"><Dashboard defaultTab="Stage" /></DemoLogin>} />
-            <Route path="/dancers" element={<DemoLogin role="admin"><Dashboard defaultTab="Performers" /></DemoLogin>} />
-            <Route path="/reports" element={<DemoLogin role="admin"><Dashboard defaultTab="Reports" /></DemoLogin>} />
-            <Route path="/kiosks"  element={<DemoLogin role="admin"><Dashboard defaultTab="Kiosks"  /></DemoLogin>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              {/* Public */}
+              <Route path="/"      element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+
+              {/* Protected — role-gated */}
+              <Route path="/dashboard" element={<RequireRole roles={[...DASHBOARD_ROLES]}><Dashboard /></RequireRole>} />
+              <Route path="/door"      element={<RequireRole roles={[...DOOR_ROLES]}><DoorCheckIn /></RequireRole>} />
+              <Route path="/stage"     element={<RequireRole roles={[...STAGE_ROLES]}><Dashboard defaultTab="Stage" /></RequireRole>} />
+              <Route path="/dancers"   element={<RequireRole roles={[...DASHBOARD_ROLES]}><Dashboard defaultTab="Performers" /></RequireRole>} />
+              <Route path="/reports"   element={<RequireRole roles={[...REPORTS_ROLES]}><Dashboard defaultTab="Reports" /></RequireRole>} />
+              <Route path="/kiosks"    element={<RequireRole roles={[...OWNER]}><Dashboard defaultTab="Kiosks" /></RequireRole>} />
+              <Route path="/settings"  element={<RequireRole roles={[...OWNER]}><ClubSettings /></RequireRole>} />
+              <Route path="/floor"     element={<RequireRole roles={[...DASHBOARD_ROLES]}><FloorView /></RequireRole>} />
+              <Route path="/rooms"     element={<RequireRole roles={[...ROOMS_ROLES]}><PrivateRooms /></RequireRole>} />
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
       </StageProvider>
     </AuthProvider>
   </QueryClientProvider>

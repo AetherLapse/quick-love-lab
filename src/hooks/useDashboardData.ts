@@ -821,12 +821,15 @@ export function useLogRoomSession() {
       roomName,
       packageName,
       amount,
+      durationMinutes,
     }: {
       dancerId: string;
       roomName: string;
       packageName: string;
       amount: number;
+      durationMinutes?: number;
     }) => {
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("room_sessions").insert({
         dancer_id: dancerId,
         room_name: roomName,
@@ -834,12 +837,36 @@ export function useLogRoomSession() {
         gross_amount: amount,
         house_cut: Math.round(amount * 0.7),
         dancer_cut: Math.round(amount * 0.3),
-        // entry_time will be set when the session actually starts (exits queue)
+        shift_date: new Date().toISOString().slice(0, 10),
+        logged_by: user?.id,
+        ...(durationMinutes != null ? { duration_minutes: durationMinutes } : {}),
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["room_sessions"] });
+      qc.invalidateQueries({ queryKey: ["room_sessions_active"] });
+    },
+  });
+}
+
+export function useExtendRoomSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ sessionId, extraMinutes }: { sessionId: string; extraMinutes: number }) => {
+      const { data: session, error: fetchErr } = await supabase
+        .from("room_sessions")
+        .select("extension_minutes")
+        .eq("id", sessionId)
+        .single();
+      if (fetchErr) throw fetchErr;
+      const { error } = await supabase.from("room_sessions")
+        .update({ extension_minutes: ((session as any).extension_minutes ?? 0) + extraMinutes })
+        .eq("id", sessionId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["room_sessions_active"] });
     },
   });
 }

@@ -12,6 +12,7 @@ import {
   Menu,
   Mic2,
   Clock,
+  BedDouble,
 } from "lucide-react";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
@@ -31,7 +32,7 @@ const navItems: NavItem[] = [
     path: "/dashboard",
     label: "Dashboard",
     icon: LayoutGrid,
-    roles: ["admin", "owner", "manager", "door_staff"],
+    roles: ["admin", "owner", "manager", "house_mom"],
   },
   {
     path: "/door",
@@ -43,13 +44,19 @@ const navItems: NavItem[] = [
     path: "/stage",
     label: "Stage",
     icon: Mic2,
-    roles: ["admin", "owner", "manager"],
+    roles: ["admin", "owner", "manager", "house_mom", "room_attendant"],
+  },
+  {
+    path: "/rooms",
+    label: "Rooms",
+    icon: BedDouble,
+    roles: ["admin", "owner", "manager", "room_attendant"],
   },
   {
     path: "/dancers",
     label: "Dancers",
     icon: Users,
-    roles: ["admin", "owner"],
+    roles: ["admin", "owner", "manager", "house_mom"],
   },
   {
     path: "/reports",
@@ -61,7 +68,7 @@ const navItems: NavItem[] = [
     path: "/kiosks",
     label: "Kiosks",
     icon: MonitorSmartphone,
-    roles: ["admin", "owner", "manager"],
+    roles: ["admin", "owner"],
   },
   {
     path: "/settings",

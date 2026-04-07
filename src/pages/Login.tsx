@@ -7,10 +7,10 @@ import logo from "@/assets/logo-2nyt.png";
 const ROLE_REDIRECTS: Record<string, string> = {
   admin:          "/dashboard",
   owner:          "/dashboard",
-  manager:        "/floor",
+  manager:        "/dashboard",
   door_staff:     "/door",
   room_attendant: "/rooms",
-  house_mom:      "/floor",
+  house_mom:      "/dashboard",
 };
 
 export default function Login() {

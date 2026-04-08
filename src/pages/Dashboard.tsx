@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Clock } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { SummaryTab } from "@/components/dashboard/SummaryTab";
@@ -29,19 +29,26 @@ function useCurrentTime() {
   const [time, setTime] = useState(() =>
     new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
   );
-  useState(() => {
+  useEffect(() => {
     const id = setInterval(() => {
       setTime(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
     }, 30000);
     return () => clearInterval(id);
-  });
+  }, []);
   return time;
 }
 
 export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab ?? "Summary");
+  // Track which tabs have been visited — once mounted, keep them alive (avoids re-fetch on switch)
+  const [mounted, setMounted] = useState<Set<Tab>>(() => new Set([defaultTab ?? "Summary"]));
   const { user } = useAuth();
   const time = useCurrentTime();
+
+  const switchTab = (tab: Tab) => {
+    setActiveTab(tab);
+    setMounted(prev => prev.has(tab) ? prev : new Set([...prev, tab]));
+  };
 
   const displayName = user?.email?.split("@")[0] ?? "Admin";
   const capitalized = displayName.charAt(0).toUpperCase() + displayName.slice(1);

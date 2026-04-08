@@ -15,7 +15,16 @@ import FloorView from "./pages/FloorView";
 import ClubSettings from "./pages/ClubSettings";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime:           60_000,  // serve cache for 1 min before background-refetch
+      gcTime:         5 * 60_000,  // keep unused cache for 5 min
+      refetchOnWindowFocus: false,  // don't refetch just because user tabbed away
+      retry: 1,
+    },
+  },
+});
 
 // Role shorthand groups
 const OWNER          = ["admin", "owner"]                                            as const;

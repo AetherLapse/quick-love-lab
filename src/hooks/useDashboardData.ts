@@ -839,6 +839,7 @@ export function useLogRoomSession() {
         dancer_cut: Math.round(amount * 0.3),
         shift_date: new Date().toISOString().slice(0, 10),
         logged_by: user?.id,
+        package_log: `${packageName} ($${amount})`,
         ...(durationMinutes != null ? { duration_minutes: durationMinutes } : {}),
       });
       if (error) throw error;
@@ -853,20 +854,40 @@ export function useLogRoomSession() {
 export function useExtendRoomSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ sessionId, extraMinutes }: { sessionId: string; extraMinutes: number }) => {
+    mutationFn: async ({
+      sessionId,
+      packageName,
+      amount,
+      extraMinutes,
+    }: {
+      sessionId: string;
+      packageName: string;
+      amount: number;
+      extraMinutes: number;
+    }) => {
       const { data: session, error: fetchErr } = await supabase
         .from("room_sessions")
-        .select("extension_minutes")
+        .select("extension_minutes, gross_amount, package_log")
         .eq("id", sessionId)
         .single();
       if (fetchErr) throw fetchErr;
-      const { error } = await supabase.from("room_sessions")
-        .update({ extension_minutes: ((session as any).extension_minutes ?? 0) + extraMinutes })
-        .eq("id", sessionId);
+      const s = session as any;
+      const newGross = (s.gross_amount ?? 0) + amount;
+      const newLog   = s.package_log
+        ? `${s.package_log} + ${packageName} ($${amount})`
+        : `${packageName} ($${amount})`;
+      const { error } = await supabase.from("room_sessions").update({
+        extension_minutes: (s.extension_minutes ?? 0) + extraMinutes,
+        gross_amount: newGross,
+        house_cut:    Math.round(newGross * 0.7),
+        dancer_cut:   Math.round(newGross * 0.3),
+        package_log:  newLog,
+      }).eq("id", sessionId);
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["room_sessions_active"] });
+      qc.invalidateQueries({ queryKey: ["room_sessions"] });
     },
   });
 }

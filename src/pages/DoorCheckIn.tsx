@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import {
@@ -147,6 +147,143 @@ function QueueEntryPill({ entry, position }: { entry: StageEntry; position: numb
   );
 }
 
+// ─── Room session helpers ─────────────────────────────────────────────────────
+
+function playBeep(frequency: number, duration: number, repeats = 1) {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    for (let i = 0; i < repeats; i++) {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.6);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.6 + duration);
+      osc.start(ctx.currentTime + i * 0.6);
+      osc.stop(ctx.currentTime + i * 0.6 + duration);
+    }
+  } catch { /* AudioContext unavailable */ }
+}
+
+function getRoomCountdownSecs(session: { entry_time?: string | null; duration_minutes?: number | null; extension_minutes?: number | null }, nowMs: number) {
+  if (!session.entry_time || !session.duration_minutes) return null;
+  const totalSecs = (session.duration_minutes + (session.extension_minutes ?? 0)) * 60 + 45;
+  const elapsedSecs = Math.floor((nowMs - new Date(session.entry_time).getTime()) / 1000);
+  return totalSecs - elapsedSecs;
+}
+
+function formatCountdown(secs: number) {
+  const abs = Math.abs(secs);
+  const m = String(Math.floor(abs / 60)).padStart(2, "0");
+  const s = String(abs % 60).padStart(2, "0");
+  return secs < 0 ? `-${m}:${s}` : `${m}:${s}`;
+}
+
+function ActiveRoomSessionsStrip({
+  sessions,
+  dancers,
+  danceTiers,
+  onExtend,
+}: {
+  sessions: any[];
+  dancers: { id: string; stage_name: string }[];
+  danceTiers: { id: string; name: string; price: number; duration_minutes: number | null }[];
+  onExtend: (sessionId: string, packageName: string, amount: number, extraMinutes: number) => void;
+}) {
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [extendingId, setExtendingId] = useState<string | null>(null);
+  const beepedWarning  = useRef<Set<string>>(new Set());
+  const beepedOvertime = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Beep logic
+  useEffect(() => {
+    sessions.forEach(s => {
+      if (!s.entry_time || !s.duration_minutes) return;
+      const remaining = getRoomCountdownSecs(s, nowMs)!;
+      if (remaining <= 60 && remaining > 0 && !beepedWarning.current.has(s.id)) {
+        beepedWarning.current.add(s.id);
+        playBeep(880, 0.25, 3);
+      }
+      if (remaining <= 0 && !beepedOvertime.current.has(s.id)) {
+        beepedOvertime.current.add(s.id);
+        playBeep(440, 0.4, 5);
+      }
+      if (remaining < 0 && Math.abs(remaining) % 30 === 0) {
+        playBeep(440, 0.4, 5);
+      }
+    });
+  }, [nowMs, sessions]);
+
+  const tiersWithDuration = danceTiers.filter(t => t.duration_minutes != null);
+  const active = sessions.filter(s => s.entry_time && s.room_name !== "Queue");
+  if (active.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-border p-4 shadow-sm space-y-2">
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active Room Sessions</h3>
+      {active.map(s => {
+        const dancer     = dancers.find(d => d.id === s.dancer_id);
+        const remaining  = s.duration_minutes ? getRoomCountdownSecs(s, nowMs) : null;
+        const isWarning  = remaining !== null && remaining <= 60 && remaining > 0;
+        const isOvertime = remaining !== null && remaining <= 0;
+
+        return (
+          <div key={s.id} className={`rounded-xl border-2 transition-all
+            ${isOvertime ? "border-red-400 bg-red-50/40" : isWarning ? "border-orange-400 bg-orange-50/40" : "border-green-300 bg-green-50/30"}`}>
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <div className={`w-2 h-2 rounded-full shrink-0 animate-pulse
+                ${isOvertime ? "bg-red-500" : isWarning ? "bg-orange-500" : "bg-green-500"}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{dancer?.stage_name ?? "—"}</p>
+                <p className="text-xs text-muted-foreground truncate font-mono">
+                  {s.package_log ?? s.package_name} · <span className="font-bold text-foreground">${s.gross_amount}</span>
+                </p>
+              </div>
+              {remaining !== null && (
+                <span className={`text-sm font-mono font-bold shrink-0
+                  ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-700"}`}>
+                  {isOvertime ? "OT " : ""}{formatCountdown(remaining)}
+                </span>
+              )}
+              <button
+                onClick={() => setExtendingId(extendingId === s.id ? null : s.id)}
+                className={`shrink-0 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all
+                  ${extendingId === s.id ? "border-green-400 bg-green-50 text-green-700" : "border-border text-muted-foreground hover:border-green-400 hover:text-green-700"}`}>
+                {extendingId === s.id ? "Cancel" : "Extend"}
+              </button>
+            </div>
+
+            {/* Tier picker inline */}
+            {extendingId === s.id && (
+              <div className="px-3 pb-3 grid grid-cols-2 gap-1.5">
+                {tiersWithDuration.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => { onExtend(s.id, t.name, t.price, t.duration_minutes!); setExtendingId(null); }}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg border border-border hover:border-green-400 hover:bg-green-50 transition-all text-left"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold">{t.name}</p>
+                      <p className="text-[10px] text-muted-foreground">+{t.duration_minutes} min</p>
+                    </div>
+                    <span className="text-xs font-bold text-green-700">+${t.price}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DoorCheckIn() {
@@ -160,6 +297,8 @@ export default function DoorCheckIn() {
   const { scanAdd, manualAdd }        = useGuestCheckIn();
   const logDance  = useLogDanceSession();
   const logRoom   = useLogRoomSession();
+  const extendRoom = useExtendRoomSession();
+  const { data: activeRoomSessions = [] } = useActiveRoomSessions();
   const { current: stageOccupied, queue: stageQueue, putOnStage, addToQueue, advanceQueue } = useStage();
 
   // ── Vendors (for distributor-tracked entry tiers) ─────────────────────────
@@ -202,6 +341,7 @@ export default function DoorCheckIn() {
         roomName: "Queue",
         packageName: selectedTier.name,
         amount,
+        durationMinutes: selectedTier.duration_minutes ?? undefined,
       });
       toast.success(`Room session for ${primaryDancer.stage_name} added to queue`);
       resetAll();
@@ -597,6 +737,16 @@ export default function DoorCheckIn() {
               </div>
             </div>
           )}
+
+          {/* ── Active room sessions strip ──────────────────────────────── */}
+          <ActiveRoomSessionsStrip
+            sessions={activeRoomSessions}
+            dancers={activeDancers}
+            danceTiers={danceTiers}
+            onExtend={(sessionId, packageName, amount, extraMinutes) =>
+              extendRoom.mutate({ sessionId, packageName, amount, extraMinutes })
+            }
+          />
 
           {/* ── Report shortcuts ─────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-2">

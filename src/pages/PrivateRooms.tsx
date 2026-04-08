@@ -5,7 +5,8 @@ import {
   Clock, DollarSign, Play, CheckCircle2,
 } from "lucide-react";
 import {
-  useActiveRoomSessions, useActiveDancers, useClubSettings, useRoomSessions, today,
+  useActiveRoomSessions, useActiveDancers, useClubSettings, useRoomSessions,
+  useExtendRoomSession, useDanceTiers, today,
 } from "@/hooks/useDashboardData";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +23,33 @@ function buildRoomName(floor: string, room: string) { return `${floor} - ${room}
 function formatTimer(ms: number) {
   const s = Math.floor(ms / 1000);
   return `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+function formatCountdown(secs: number) {
+  const abs = Math.abs(secs);
+  const m = String(Math.floor(abs / 60)).padStart(2, "0");
+  const s = String(abs % 60).padStart(2, "0");
+  return secs < 0 ? `-${m}:${s}` : `${m}:${s}`;
+}
+function getCountdownSecs(session: { entry_time?: string | null; duration_minutes?: number | null; extension_minutes?: number | null }, nowMs: number) {
+  if (!session.entry_time || !session.duration_minutes) return null;
+  const totalSecs = (session.duration_minutes + (session.extension_minutes ?? 0)) * 60 + 45;
+  const elapsedSecs = Math.floor((nowMs - new Date(session.entry_time).getTime()) / 1000);
+  return totalSecs - elapsedSecs;
+}
+function playBeep(frequency: number, duration: number, repeats = 1) {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    for (let i = 0; i < repeats; i++) {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.6);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.6 + duration);
+      osc.start(ctx.currentTime + i * 0.6);
+      osc.stop(ctx.currentTime + i * 0.6 + duration);
+    }
+  } catch { /* AudioContext unavailable */ }
 }
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -55,6 +83,13 @@ export default function PrivateRooms() {
   // ── Assign-queue-to-room modal ────────────────────────────────────────────────
   const [assignSession, setAssignSession]   = useState<Session | null>(null);
 
+  // ── Extend modal ─────────────────────────────────────────────────────────────
+  const [extendSession, setExtendSession]   = useState<Session | null>(null);
+
+  // ── Beep tracking ─────────────────────────────────────────────────────────────
+  const beepedWarning  = useRef<Set<string>>(new Set());
+  const beepedOvertime = useRef<Set<string>>(new Set());
+
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -64,6 +99,7 @@ export default function PrivateRooms() {
   const { data: dancers = [] }   = useActiveDancers();
   const { data: settings }       = useClubSettings();
   const { data: todaySessions = [] } = useRoomSessions(today(), today());
+  const { data: danceTiers = [] } = useDanceTiers();
   const qc = useQueryClient();
 
   // Split active query into queue vs truly active
@@ -101,6 +137,26 @@ export default function PrivateRooms() {
     return () => clearInterval(iv);
   }, []);
 
+  // ── Beep alerts ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    active.forEach(s => {
+      const remaining = getCountdownSecs(s, now);
+      if (remaining === null) return;
+      if (remaining <= 60 && remaining > 0 && !beepedWarning.current.has(s.id)) {
+        beepedWarning.current.add(s.id);
+        playBeep(880, 0.25, 3);
+      }
+      if (remaining <= 0 && !beepedOvertime.current.has(s.id)) {
+        beepedOvertime.current.add(s.id);
+        playBeep(440, 0.4, 5);
+      }
+      // Repeating overtime beep every 30s
+      if (remaining < 0 && Math.abs(remaining) % 30 === 0) {
+        playBeep(440, 0.4, 5);
+      }
+    });
+  }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; stopFaceCamera(); };
@@ -125,6 +181,7 @@ export default function PrivateRooms() {
         house_cut:    pkg.house,
         dancer_cut:   pkg.dancer,
         logged_by:    user?.id,
+        package_log:  `${pkg.label} ($${pkg.price})`,
       });
       if (error) throw error;
     },
@@ -168,6 +225,8 @@ export default function PrivateRooms() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const extendMutation = useExtendRoomSession();
 
   // ── New session modal helpers ─────────────────────────────────────────────────
 
@@ -303,18 +362,23 @@ export default function PrivateRooms() {
                   const key     = buildRoomName(floor, room);
                   const session = sessionByRoom[key];
                   const elapsed = session ? now - new Date(session.entry_time).getTime() : 0;
-                  const isOvertime = elapsed > 900_000; // 15 min
+                  const remaining = session ? getCountdownSecs(session, now) : null;
+                  const isOvertime = remaining !== null ? remaining <= 0 : elapsed > 900_000;
+                  const isWarning  = remaining !== null && remaining <= 60 && remaining > 0;
                   const dancer = session ? dancers.find(d => d.id === session.dancer_id) : null;
 
                   if (session) {
                     return (
-                      <div key={key} className={`glass-card p-5 border-2 transition-all ${isOvertime ? "border-destructive" : "border-primary/60"}`}>
+                      <div key={key} className={`glass-card p-5 border-2 transition-all
+                        ${isOvertime ? "border-red-500 bg-red-50/30" : isWarning ? "border-orange-400 bg-orange-50/30" : "border-green-400 bg-green-50/20"}`}>
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="font-heading text-2xl tracking-wide">{room}</h3>
                           <div className="flex items-center gap-2">
-                            <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${isOvertime ? "bg-destructive" : "bg-primary"}`} />
-                            <span className={`text-xs font-medium uppercase tracking-wider ${isOvertime ? "text-destructive" : "text-primary"}`}>
-                              {isOvertime ? "Overtime" : "Active"}
+                            <div className={`w-2.5 h-2.5 rounded-full animate-pulse
+                              ${isOvertime ? "bg-red-500" : isWarning ? "bg-orange-500" : "bg-green-500"}`} />
+                            <span className={`text-xs font-medium uppercase tracking-wider
+                              ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-600"}`}>
+                              {isOvertime ? "Overtime" : isWarning ? "Ending Soon" : "Active"}
                             </span>
                           </div>
                         </div>
@@ -325,34 +389,56 @@ export default function PrivateRooms() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Package</span>
-                            <span>{session.package_name} — ${session.gross_amount}</span>
+                            <span className="font-medium">{(session as any).package_log ?? `${session.package_name} — $${session.gross_amount}`}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Elapsed</span>
-                            <span className={`font-mono font-bold ${isOvertime ? "text-destructive" : "text-primary"}`}>
-                              {formatTimer(elapsed)}
-                            </span>
+                            <span className="text-muted-foreground">Total</span>
+                            <span className="font-bold text-foreground">${session.gross_amount}</span>
                           </div>
+                          {remaining !== null ? (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">{isOvertime ? "Overtime" : "Remaining"}</span>
+                              <span className={`font-mono font-bold text-base
+                                ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-600"}`}>
+                                {formatCountdown(remaining)}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Elapsed</span>
+                              <span className={`font-mono font-bold ${isOvertime ? "text-red-600" : "text-green-600"}`}>
+                                {formatTimer(elapsed)}
+                              </span>
+                            </div>
+                          )}
                           {isOvertime && (
-                            <p className="text-xs text-destructive flex items-center gap-1">
+                            <p className="text-xs text-red-600 flex items-center gap-1">
                               <AlertTriangle className="w-3.5 h-3.5" /> Session overtime
                             </p>
                           )}
                           <div className="flex justify-between pt-2 border-t border-border/50">
                             <span className="text-muted-foreground">Split</span>
                             <span className="text-xs">
-                              House <span className="text-primary font-semibold">${session.house_cut}</span>{" "}
+                              House <span className="font-semibold">${session.house_cut}</span>{" "}
                               | Dancer <span className="font-semibold">${session.dancer_cut}</span>
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => endSession.mutate(session.id)}
-                          disabled={endSession.isPending}
-                          className="w-full py-2.5 rounded-xl border border-destructive/50 text-destructive hover:bg-destructive/10 font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          {endSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "End Session"}
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setExtendSession(session)}
+                            className="flex-1 py-2 rounded-xl border border-green-400 text-green-700 hover:bg-green-50 font-medium text-sm transition-all"
+                          >
+                            Extend
+                          </button>
+                          <button
+                            onClick={() => endSession.mutate(session.id)}
+                            disabled={endSession.isPending}
+                            className="flex-1 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            {endSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "End Session"}
+                          </button>
+                        </div>
                       </div>
                     );
                   }
@@ -421,6 +507,56 @@ export default function PrivateRooms() {
           </div>
         )}
       </div>
+
+      {/* ── Extend Session Modal ── */}
+      {extendSession && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card p-6 w-full max-w-sm border border-primary/20 animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-heading text-2xl tracking-wide">Extend Session</h3>
+              <button onClick={() => setExtendSession(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Current total */}
+            <div className="bg-secondary/50 rounded-xl p-4 mb-5 text-sm space-y-1">
+              <p><span className="text-muted-foreground">Dancer:</span> <span className="font-medium">{dancers.find(d => d.id === extendSession.dancer_id)?.stage_name ?? "—"}</span></p>
+              <p><span className="text-muted-foreground">Current total:</span> <span className="font-bold">${extendSession.gross_amount}</span></p>
+              {(extendSession as any).package_log && (
+                <p className="text-xs text-muted-foreground font-mono break-all">{(extendSession as any).package_log}</p>
+              )}
+            </div>
+
+            <p className="text-sm text-muted-foreground mb-3">Choose a package to add:</p>
+            <div className="space-y-2">
+              {danceTiers.filter(t => t.duration_minutes != null).map(tier => (
+                <button
+                  key={tier.id}
+                  disabled={extendMutation.isPending}
+                  onClick={async () => {
+                    await extendMutation.mutateAsync({
+                      sessionId:   extendSession.id,
+                      packageName: tier.name,
+                      amount:      tier.price,
+                      extraMinutes: tier.duration_minutes!,
+                    });
+                    toast.success(`Extended: +${tier.name} (+$${tier.price})`);
+                    setExtendSession(null);
+                  }}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-border hover:border-green-400 hover:bg-green-50 transition-all disabled:opacity-50 text-left"
+                >
+                  <div>
+                    <p className="font-semibold text-sm">{tier.name}</p>
+                    <p className="text-xs text-muted-foreground">+{tier.duration_minutes} min</p>
+                  </div>
+                  <span className="font-bold text-green-700">+${tier.price}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Assign to Room Modal ── */}
       {assignSession && (

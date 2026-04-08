@@ -3,7 +3,10 @@ import { useState, useEffect } from "react";
 import { UserRound, ShieldCheck, ScanFace, LogIn, UserPlus } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
 
-const TAGLINES = ["Pole Intelligence", "Venue Intelligence", "A Stage for Your Venue"];
+const TAGLINES = [
+  "Venue Intelligence Built from the Floor Up!",
+  "A Stage for your Venue, Pole Intelligence!",
+];
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -12,7 +15,7 @@ export default function Landing() {
   useEffect(() => {
     const interval = setInterval(() => {
       setTaglineIndex(i => (i + 1) % TAGLINES.length);
-    }, 2800);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 

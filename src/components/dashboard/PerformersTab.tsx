@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { AlertCircle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, Loader2, KeyRound, Check, X, Clock } from "lucide-react";
 import { type Period } from "./mockData";
 import { DateFilter } from "./DateFilter";
-import { useDancerPerformance, useDancers, today } from "@/hooks/useDashboardData";
+import { useDancerPerformance, useDancers, useEarlyLeaveCodes, useGenerateEarlyLeaveCode, today } from "@/hooks/useDashboardData";
 import { PanelStack } from "./DraggablePanels";
+import { useAuth } from "@/hooks/useAuth";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,144 @@ function DancerCard({ name, checkIn, isLate, houseFee, danceRevenue, outstanding
   );
 }
 
+// ─── Early Leave Permits panel ────────────────────────────────────────────────
+
+function EarlyLeavePermitsPanel() {
+  const { user } = useAuth();
+  const { data: dancers = [] }      = useDancers();
+  const { data: codes = [], isLoading } = useEarlyLeaveCodes();
+  const generate = useGenerateEarlyLeaveCode();
+
+  const [reason, setReason]           = useState("");
+  const [dancerId, setDancerId]       = useState("");
+  const [lastCode, setLastCode]       = useState<string | null>(null);
+  const [open, setOpen]               = useState(false);
+
+  const activeDancers = dancers.filter((d: any) => d.is_active);
+
+  const handleGenerate = async () => {
+    if (!reason.trim() || !user) return;
+    const result = await generate.mutateAsync({
+      reason: reason.trim(),
+      dancerId: dancerId || undefined,
+      generatedBy: user.id,
+    });
+    setLastCode(result.code);
+    setReason(""); setDancerId("");
+  };
+
+  const formatTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+      {/* Header — always visible */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-secondary/30 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <KeyRound className="w-4 h-4 text-primary" />
+          <span className="font-semibold text-sm text-foreground">Early Leave Permits</span>
+          {codes.filter(c => !c.used).length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+              {codes.filter(c => !c.used).length} active
+            </span>
+          )}
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-5 border-t border-border/40">
+          {/* Generate form */}
+          <div className="pt-4 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Generate One-Time Code</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Reason <span className="text-destructive">*</span></label>
+                <input
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  placeholder="e.g. Family emergency"
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Dancer (optional — leave blank for any dancer)</label>
+                <select
+                  value={dancerId}
+                  onChange={e => setDancerId(e.target.value)}
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary bg-white"
+                >
+                  <option value="">Any dancer</option>
+                  {activeDancers.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.stage_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={handleGenerate}
+              disabled={!reason.trim() || generate.isPending}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {generate.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              Generate Code
+            </button>
+
+            {/* Show newly generated code */}
+            {lastCode && (
+              <div className="flex items-center justify-between px-4 py-3 bg-green-50 border border-green-200 rounded-xl animate-in fade-in duration-300">
+                <div>
+                  <p className="text-xs text-green-700 font-medium mb-0.5">One-time code generated — share with dancer</p>
+                  <p className="text-2xl font-mono font-bold tracking-[0.3em] text-green-800">{lastCode}</p>
+                </div>
+                <button onClick={() => { navigator.clipboard?.writeText(lastCode); }} className="p-2 rounded-lg hover:bg-green-100 text-green-700 transition-colors" title="Copy">
+                  <Check className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Today's codes list */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tonight's Codes</p>
+            {isLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+            ) : codes.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">No codes generated tonight</p>
+            ) : (
+              <div className="space-y-1.5">
+                {codes.map(c => (
+                  <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm
+                    ${c.used ? "border-border/40 bg-secondary/20 opacity-60" : "border-green-200 bg-green-50/50"}`}>
+                    <span className={`font-mono font-bold tracking-widest text-base ${c.used ? "text-muted-foreground" : "text-green-800"}`}>
+                      {c.code}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{c.reason}</p>
+                      {c.dancers && <p className="text-[10px] text-muted-foreground">For: {c.dancers.stage_name}</p>}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Clock className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">{formatTime(c.created_at)}</span>
+                    </div>
+                    {c.used
+                      ? <span className="text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full shrink-0">Used</span>
+                      : <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">Active</span>
+                    }
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export function PerformersTab() {
@@ -190,6 +329,8 @@ export function PerformersTab() {
         </div>
         <DateFilter activePeriod={activePeriod} setActivePeriod={setActivePeriod} customRange={customRange} setCustomRange={setCustomRange} />
       </div>
+
+      <EarlyLeavePermitsPanel />
 
       <PanelStack storageKey="performers" panels={[
         {

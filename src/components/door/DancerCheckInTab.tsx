@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search } from "lucide-react";
-import { useDancerCheckIn } from "@/hooks/useDashboardData";
+import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield } from "lucide-react";
+import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface DancerLogEntry {
   name: string;
@@ -24,7 +25,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const [empId, setEmpId]           = useState("");
   const [dancer, setDancer]         = useState<{ id: string; stage_name: string; is_enrolled: boolean } | null>(null);
   const [searching, setSearching]   = useState(false);
-  const [enrolling, setEnrolling]   = useState(false);
+  const [, setEnrolling]            = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
@@ -219,9 +220,206 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ─── Dancer Check-Out panel ───────────────────────────────────────────────────
+
+function CheckOutPanel({ onBack }: { onBack: () => void }) {
+  const { user } = useAuth();
+  const { data: checkedIn = [], isLoading } = useCheckedInDancersToday();
+  const checkOut = useDancerCheckOut();
+
+  const [selected, setSelected]     = useState<typeof checkedIn[0] | null>(null);
+  const [waiverCode, setWaiverCode] = useState("");
+  const [codeError, setCodeError]   = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [validCode, setValidCode]   = useState<{ id: string; reason: string } | null>(null);
+
+  // Fine applies if current time is before midnight (hour 0–23 on the shift day, after 6 PM)
+  // After midnight (hour 0–5 AM next day) → no fine.
+  const hasFine = (() => {
+    const h = new Date().getHours();
+    return h >= 18 && h <= 23; // 6 PM – 11:59 PM = before midnight, fine applies
+  })();
+
+  const validateCode = async () => {
+    if (!selected || !waiverCode.trim()) return;
+    setValidating(true); setCodeError(null); setValidCode(null);
+    const { data, error } = await (supabase as any)
+      .from("early_leave_codes")
+      .select("id, reason, dancer_id, used")
+      .eq("code", waiverCode.trim().toUpperCase())
+      .eq("shift_date", new Date().toISOString().slice(0, 10))
+      .maybeSingle();
+    setValidating(false);
+    if (error || !data) { setCodeError("Code not found"); return; }
+    if (data.used) { setCodeError("Code already used"); return; }
+    if (data.dancer_id && data.dancer_id !== selected.dancer_id) {
+      setCodeError("Code not valid for this dancer"); return;
+    }
+    setValidCode({ id: data.id, reason: data.reason });
+  };
+
+  const handleCheckOut = async (waiveWithCode: boolean) => {
+    if (!selected || !user) return;
+    const fine   = hasFine && !waiveWithCode ? EARLY_LEAVE_FINE_AMOUNT : 0;
+    const waived = hasFine && waiveWithCode;
+    try {
+      await checkOut.mutateAsync({
+        attendanceId:  selected.id,
+        dancerId:      selected.dancer_id,
+        fine,
+        fineWaived:    waived,
+        waiverCodeId:  waived && validCode ? validCode.id : undefined,
+        checkedOutBy:  user.id,
+      });
+      const name = selected.dancers?.stage_name ?? "Dancer";
+      if (fine > 0)        toast.success(`${name} checked out — $${fine} early leave fine applied`);
+      else if (waived)     toast.success(`${name} checked out — fine waived (${validCode?.reason})`);
+      else                 toast.success(`${name} checked out`);
+      setSelected(null); setWaiverCode(""); setValidCode(null);
+    } catch (e: any) {
+      toast.error(e.message ?? "Checkout failed");
+    }
+  };
+
+  const clockInTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h3 className="font-heading text-lg tracking-wide">Dancer Check-Out</h3>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : checkedIn.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No dancers currently checked in</p>
+      ) : (
+        <div className="space-y-2">
+          {checkedIn.map(entry => (
+            <button
+              key={entry.id}
+              onClick={() => { setSelected(entry); setWaiverCode(""); setValidCode(null); setCodeError(null); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all
+                ${selected?.id === entry.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"}`}
+            >
+              <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-bold shrink-0">
+                {entry.dancers?.stage_name?.charAt(0).toUpperCase() ?? "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm">{entry.dancers?.stage_name ?? "—"}</p>
+                <p className="text-xs text-muted-foreground">In at {clockInTime(entry.clock_in)}</p>
+              </div>
+              <LogOut className="w-4 h-4 text-muted-foreground shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Checkout modal for selected dancer */}
+      {selected && (
+        <div className="glass-card border-2 border-primary/20 p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold">{selected.dancers?.stage_name}</p>
+            <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          </div>
+
+          {hasFine ? (
+            <div className="space-y-3">
+              {/* Fine warning */}
+              <div className="flex items-start gap-2 px-3 py-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Early Leave — Before Midnight</p>
+                  <p className="text-xs mt-0.5">Fine: <span className="font-bold">${EARLY_LEAVE_FINE_AMOUNT}</span></p>
+                </div>
+              </div>
+
+              {/* Waiver code entry */}
+              {!validCode ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Have a manager one-time code? Enter it to waive the fine:</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={waiverCode}
+                      onChange={e => { setWaiverCode(e.target.value.toUpperCase()); setCodeError(null); }}
+                      placeholder="e.g. KX7M2QPL"
+                      maxLength={12}
+                      className={`flex-1 border rounded-xl px-3 py-2 text-sm font-mono uppercase tracking-wider focus:outline-none focus:border-primary
+                        ${codeError ? "border-destructive" : "border-border"}`}
+                    />
+                    <button
+                      onClick={validateCode}
+                      disabled={validating || !waiverCode.trim()}
+                      className="px-3 py-2 rounded-xl bg-secondary text-sm font-medium hover:bg-secondary/80 disabled:opacity-50 transition-all"
+                    >
+                      {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                    </button>
+                  </div>
+                  {codeError && <p className="text-xs text-destructive">{codeError}</p>}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800">
+                  <Shield className="w-4 h-4 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-semibold">Code valid — fine waived</p>
+                    <p className="text-xs text-green-700">{validCode.reason}</p>
+                  </div>
+                  <button onClick={() => { setValidCode(null); setWaiverCode(""); }} className="text-green-600 hover:text-green-800 transition-colors">
+                    <ShieldOff className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                {validCode ? (
+                  <button
+                    onClick={() => handleCheckOut(true)}
+                    disabled={checkOut.isPending}
+                    className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                  >
+                    {checkOut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Shield className="w-4 h-4" /> Check Out (Fine Waived)</>}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCheckOut(false)}
+                    disabled={checkOut.isPending}
+                    className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                  >
+                    {checkOut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><DollarSign className="w-4 h-4" /> Check Out + ${EARLY_LEAVE_FINE_AMOUNT} Fine</>}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 px-3 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800">
+                <Check className="w-4 h-4 shrink-0" />
+                <p>After midnight — no fine applies</p>
+              </div>
+              <button
+                onClick={() => handleCheckOut(false)}
+                disabled={checkOut.isPending}
+                className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+              >
+                {checkOut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><LogOut className="w-4 h-4" /> Check Out</>}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps) {
   const { user, role } = useAuth();
-  const [mode, setMode] = useState<"checkin" | "enroll">("checkin");
+  const [mode, setMode] = useState<"checkin" | "enroll" | "checkout">("checkin");
   const [step, setStep] = useState<Step>("idle");
   const [result, setResult] = useState<{ name: string; fee: number } | null>(null);
   const [resultMethod, setResultMethod] = useState<"Face Scan" | "PIN Entry">("Face Scan");
@@ -418,6 +616,10 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     return <EnrollDancerPanel onBack={() => setMode("checkin")} />;
   }
 
+  if (mode === "checkout") {
+    return <CheckOutPanel onBack={() => setMode("checkin")} />;
+  }
+
   return (
     <div className="space-y-4">
       {/* PIN Verify Overlay */}
@@ -473,12 +675,18 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
             >
               Use PIN Instead →
             </button>
-            <div className="border-t border-border/40 mt-3 pt-3">
+            <div className="border-t border-border/40 mt-3 pt-3 flex gap-2">
               <button
                 onClick={handleEnrollClick}
-                className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors py-1.5"
+                className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors py-1.5"
               >
-                <UserPlus className="w-4 h-4" /> New Dancer Enrollment →
+                <UserPlus className="w-4 h-4" /> Enroll Dancer →
+              </button>
+              <button
+                onClick={() => setMode("checkout")}
+                className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-orange-600 transition-colors py-1.5 border-l border-border/40"
+              >
+                <LogOut className="w-4 h-4" /> Check Out →
               </button>
             </div>
           </>

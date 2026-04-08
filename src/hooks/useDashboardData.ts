@@ -646,6 +646,151 @@ export function useDancerCheckIn() {
   return { findByPin, checkIn };
 }
 
+// ─── Read: checked-in dancers still on shift today ───────────────────────────
+
+export function useCheckedInDancersToday() {
+  return useQuery({
+    queryKey: ["attendance_today_active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance_log")
+        .select("id, dancer_id, clock_in, early_leave_fine, fine_waived, dancers(id, stage_name, employee_id, entrance_fee)")
+        .eq("shift_date", today())
+        .is("clock_out", null)
+        .order("clock_in", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        dancer_id: string;
+        clock_in: string;
+        early_leave_fine: number;
+        fine_waived: boolean;
+        dancers: { id: string; stage_name: string; employee_id: string | null; entrance_fee: number } | null;
+      }>;
+    },
+    refetchInterval: 15000,
+  });
+}
+
+// ─── Write: dancer check-out ──────────────────────────────────────────────────
+
+export const EARLY_LEAVE_FINE_AMOUNT = 20; // $20 fine for leaving before midnight
+
+export function useDancerCheckOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      attendanceId,
+      dancerId,
+      fine,
+      fineWaived,
+      waiverCodeId,
+      checkedOutBy,
+    }: {
+      attendanceId: string;
+      dancerId: string;
+      fine: number;
+      fineWaived: boolean;
+      waiverCodeId?: string;
+      checkedOutBy: string;
+    }) => {
+      const { error } = await supabase.from("attendance_log").update({
+        clock_out:       new Date().toISOString(),
+        early_leave_fine: fine,
+        fine_waived:     fineWaived,
+        checked_out_by:  checkedOutBy,
+        ...(waiverCodeId ? { waiver_code_id: waiverCodeId } : {}),
+      }).eq("id", attendanceId);
+      if (error) throw error;
+
+      if (waiverCodeId) {
+        await supabase.from("early_leave_codes").update({
+          used:               true,
+          used_at:            new Date().toISOString(),
+          used_by_dancer_id:  dancerId,
+        }).eq("id", waiverCodeId);
+      }
+
+      await supabase.from("dancer_event_log").insert({
+        dancer_id:  dancerId,
+        event_type: "check_out",
+        payload:    { fine, fine_waived: fineWaived, waiver_used: !!waiverCodeId },
+        author_id:  checkedOutBy,
+      }).then(() => {}); // non-blocking, ignore error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance_today_active"] });
+      qc.invalidateQueries({ queryKey: ["dancers_active"] });
+      qc.invalidateQueries({ queryKey: ["attendance_log"] });
+    },
+  });
+}
+
+// ─── Read: today's early-leave codes ─────────────────────────────────────────
+
+export function useEarlyLeaveCodes() {
+  return useQuery({
+    queryKey: ["early_leave_codes_today"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("early_leave_codes")
+        .select("*, dancers(stage_name)")
+        .eq("shift_date", today())
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        code: string;
+        reason: string;
+        dancer_id: string | null;
+        used: boolean;
+        used_at: string | null;
+        created_at: string;
+        dancers: { stage_name: string } | null;
+      }>;
+    },
+    refetchInterval: 20000,
+  });
+}
+
+// ─── Write: generate early-leave code ────────────────────────────────────────
+
+export function useGenerateEarlyLeaveCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      reason,
+      dancerId,
+      generatedBy,
+    }: {
+      reason: string;
+      dancerId?: string;
+      generatedBy: string;
+    }) => {
+      const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const bytes    = crypto.getRandomValues(new Uint8Array(8));
+      const code     = Array.from(bytes).map(b => alphabet[b % alphabet.length]).join("");
+
+      const { data, error } = await (supabase as any)
+        .from("early_leave_codes")
+        .insert({
+          code,
+          reason,
+          generated_by: generatedBy,
+          shift_date:   today(),
+          ...(dancerId ? { dancer_id: dancerId } : {}),
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as { id: string; code: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["early_leave_codes_today"] });
+    },
+  });
+}
+
 // ─── Write: guest entry (manual) ─────────────────────────────────────────────
 
 export function useGuestCheckIn() {

@@ -9,8 +9,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Settings, Save, UserPlus, Users,
-  Loader2, X, Eye, EyeOff, Check, ShieldCheck, Mic2,
-  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Mail, Pencil, AlertCircle,
+  Loader2, Eye, EyeOff, Check, ShieldCheck, Mic2,
+  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle,
 } from "lucide-react";
 
 type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom";
@@ -454,13 +454,26 @@ function EditStaffModal({ member, onClose, onSuccess }: {
     if (!member) return;
     if (newPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
     setSettingPwd(true);
-    const { error } = await supabase.functions.invoke("set-staff-password", {
-      body: { user_id: member.user_id, new_password: newPassword },
-    });
-    setSettingPwd(false);
-    if (error) { toast.error(error.message ?? "Failed to set password"); return; }
-    toast.success("Password updated");
-    setNewPassword("");
+    try {
+      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+      const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/set-staff-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": ANON_KEY,
+          "Authorization": `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({ user_id: member.user_id, new_password: newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data?.error ?? `HTTP ${res.status}`); return; }
+      toast.success("Password updated");
+      setNewPassword("");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to set password");
+    } finally {
+      setSettingPwd(false);
+    }
   };
 
   return (

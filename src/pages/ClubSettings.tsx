@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import {
   Settings, Save, UserPlus, Users,
   Loader2, Eye, EyeOff, Check, ShieldCheck, Mic2,
-  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle,
+  ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle, Plus, X,
 } from "lucide-react";
 
 type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom";
@@ -20,7 +20,8 @@ const ROLE_LABELS: Record<AppRole, string> = {
 };
 
 interface Dancer {
-  id: string; stage_name: string; employee_id: string;
+  id: string; full_name: string; stage_name: string; employee_id: string;
+  email: string; phone: string;
   pin_code: string; payout_percentage: number; entrance_fee: number;
   is_active: boolean; dancer_number: number | null;
 }
@@ -70,23 +71,29 @@ function Section({ icon, title, subtitle, action, children }: {
 function AddDancerModal({ open, onClose, onSuccess }: {
   open: boolean; onClose: () => void; onSuccess: () => void;
 }) {
-  const [step, setStep]             = useState(0);
-  const [stageName, setStageName]   = useState("");
-  const [pin, setPin]               = useState("");
-  const [showPin, setShowPin]       = useState(false);
-  const [payoutPct, setPayoutPct]   = useState("30");
+  const [step, setStep]               = useState(0);
+  const [fullName, setFullName]       = useState("");
+  const [email, setEmail]             = useState("");
+  const [phone, setPhone]             = useState("");
+  const [pin, setPin]                 = useState("");
+  const [showPin, setShowPin]         = useState(false);
+  const [payoutPct, setPayoutPct]     = useState("30");
   const [entranceFee, setEntranceFee] = useState("50");
-  const [saving, setSaving]         = useState(false);
+  const [saving, setSaving]           = useState(false);
 
   const reset = () => {
-    setStep(0); setStageName(""); setPin("");
+    setStep(0); setFullName(""); setEmail(""); setPhone(""); setPin("");
     setPayoutPct("30"); setEntranceFee("50"); setShowPin(false);
   };
 
   const close = () => { reset(); onClose(); };
 
   const next = () => {
-    if (step === 0 && !stageName.trim()) { toast.error("Stage name is required"); return; }
+    if (step === 0) {
+      if (!fullName.trim())                          { toast.error("Full name is required"); return; }
+      if (!email.trim() || !email.includes("@"))     { toast.error("Valid email is required"); return; }
+      if (!phone.trim())                             { toast.error("Phone number is required"); return; }
+    }
     if (step === 1 && pin.length < 4) { toast.error("PIN must be 4–6 digits"); return; }
     setStep(s => s + 1);
   };
@@ -94,19 +101,22 @@ function AddDancerModal({ open, onClose, onSuccess }: {
   const submit = async () => {
     setSaving(true);
     const { error } = await (supabase as any).from("dancers").insert({
-      stage_name: stageName.trim(),
-      pin_code: pin,
+      full_name:         fullName.trim(),
+      stage_name:        fullName.trim(), // mirrors full_name until dancer sets own stage name via portal
+      email:             email.trim().toLowerCase(),
+      phone:             phone.trim(),
+      pin_code:          pin,
       payout_percentage: parseFloat(payoutPct),
-      entrance_fee: parseFloat(entranceFee),
-      is_active: true,
+      entrance_fee:      parseFloat(entranceFee),
+      is_active:         true,
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Dancer "${stageName}" added — Employee ID auto-assigned`);
+    toast.success(`Dancer "${fullName}" added — Employee ID auto-assigned`);
     reset(); onSuccess(); onClose();
   };
 
-  const STEPS = ["Basic Info", "Security", "Financial"];
+  const STEPS = ["Personal Info", "Security", "Financial"];
 
   return (
     <Modal open={open} onClose={close} title="Add New Dancer">
@@ -116,14 +126,24 @@ function AddDancerModal({ open, onClose, onSuccess }: {
         {step === 0 && (
           <>
             <div className="space-y-1.5">
-              <Label>Stage Name <span className="text-destructive">*</span></Label>
-              <Input autoFocus value={stageName} onChange={e => setStageName(e.target.value)}
-                placeholder="e.g. Crystal" onKeyDown={e => e.key === "Enter" && next()} />
+              <Label>Full Name (Legal) <span className="text-destructive">*</span></Label>
+              <Input autoFocus value={fullName} onChange={e => setFullName(e.target.value)}
+                placeholder="e.g. Jessica Martinez" onKeyDown={e => e.key === "Enter" && next()} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email Address <span className="text-destructive">*</span></Label>
+              <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="dancer@example.com" onKeyDown={e => e.key === "Enter" && next()} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Phone Number <span className="text-destructive">*</span></Label>
+              <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                placeholder="e.g. (555) 123-4567" onKeyDown={e => e.key === "Enter" && next()} />
             </div>
             <div className="rounded-xl bg-secondary/40 border border-dashed border-border px-4 py-3 flex items-center gap-2">
               <Check className="w-4 h-4 text-primary shrink-0" />
               <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Employee ID</span> will be auto-assigned (e.g. EMP-004) after saving. Share it with the dancer for enrollment at the door.
+                <span className="font-semibold text-foreground">Employee ID</span> will be auto-assigned (e.g. EMP-004) after saving. The dancer can set a stage name later via their portal.
               </p>
             </div>
           </>
@@ -159,7 +179,9 @@ function AddDancerModal({ open, onClose, onSuccess }: {
             {/* Review summary */}
             <div className="mt-2 rounded-xl bg-secondary/50 border border-border p-4 space-y-1.5 text-sm">
               <p className="font-semibold text-foreground mb-2">Review</p>
-              <div className="flex justify-between"><span className="text-muted-foreground">Stage Name</span><span className="font-medium">{stageName}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Full Name</span><span className="font-medium">{fullName}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-medium">{email}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-medium">{phone}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="font-medium text-primary">Auto-assigned</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">PIN</span><span className="font-medium">{"•".repeat(pin.length)}</span></div>
             </div>
@@ -315,10 +337,150 @@ function AddStaffModal({ open, onClose, onSuccess }: {
   );
 }
 
+// ─── Stage names section (used inside Edit Dancer modal) ─────────────────────
+interface StageName { id: string; name: string; is_active: boolean; }
+
+function StageNamesSection({
+  dancerId, onActiveChange,
+}: {
+  dancerId: string;
+  onActiveChange: (name: string) => void;
+}) {
+  const [names, setNames]     = useState<StageName[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [adding, setAdding]   = useState(false);
+  const [selecting, setSelecting] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
+
+  // Fetch on mount
+  useEffect(() => {
+    if (!dancerId) return;
+    setLoading(true);
+    supabase
+      .from("dancer_stage_names" as any)
+      .select("id, name, is_active")
+      .eq("dancer_id", dancerId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        setNames((data as StageName[]) ?? []);
+        setLoading(false);
+      });
+  }, [dancerId]);
+
+  const handleAdd = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setAdding(true); setError(null);
+    const { data, error: err } = await (supabase as any)
+      .from("dancer_stage_names")
+      .insert({ dancer_id: dancerId, name: trimmed, is_active: false })
+      .select("id, name, is_active")
+      .single();
+    setAdding(false);
+    if (err) {
+      setError(err.message.includes("unique") ? "That name already exists" : err.message);
+      return;
+    }
+    setNames(prev => [data as StageName, ...prev]);
+    setNewName(""); setShowAdd(false);
+  };
+
+  const handleSelect = async (sn: StageName) => {
+    setSelecting(sn.id); setError(null);
+    // Deactivate all
+    await (supabase as any)
+      .from("dancer_stage_names")
+      .update({ is_active: false })
+      .eq("dancer_id", dancerId);
+    // Activate chosen
+    const { error: err } = await (supabase as any)
+      .from("dancer_stage_names")
+      .update({ is_active: true })
+      .eq("id", sn.id);
+    setSelecting(null);
+    if (err) { setError(err.message); return; }
+    setNames(prev => prev.map(n => ({ ...n, is_active: n.id === sn.id })));
+    onActiveChange(sn.name);
+  };
+
+  const active = names.find(n => n.is_active);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-1.5">
+          <Mic2 className="w-3.5 h-3.5 text-primary" /> Stage Names
+          {active && <span className="text-xs font-normal text-muted-foreground ml-1">— active: <span className="text-primary font-semibold">{active.name}</span></span>}
+        </Label>
+        <button
+          type="button"
+          onClick={() => { setShowAdd(v => !v); setNewName(""); setError(null); }}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+        >
+          {showAdd ? <><X className="w-3 h-3" /> Cancel</> : <><Plus className="w-3 h-3" /> Add</>}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="flex gap-2">
+          <Input
+            autoFocus
+            value={newName}
+            onChange={e => { setNewName(e.target.value); setError(null); }}
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+            placeholder="e.g. Crystal"
+            maxLength={30}
+            className="text-sm"
+          />
+          <Button size="sm" onClick={handleAdd} disabled={adding || !newName.trim()} className="shrink-0 gap-1">
+            {adding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+            Add
+          </Button>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading stage names…
+        </div>
+      ) : names.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-1">No stage names yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {names.map(sn => (
+            <button
+              key={sn.id}
+              type="button"
+              onClick={() => !sn.is_active && handleSelect(sn)}
+              disabled={sn.is_active || !!selecting}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all
+                ${sn.is_active
+                  ? "border-primary bg-primary/10 text-primary cursor-default"
+                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+                }`}
+            >
+              {sn.is_active && <Check className="w-3 h-3" />}
+              {selecting === sn.id && <Loader2 className="w-3 h-3 animate-spin" />}
+              {sn.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Edit Dancer modal ────────────────────────────────────────────────────────
 function EditDancerModal({ dancer, onClose, onSuccess }: {
   dancer: Dancer | null; onClose: () => void; onSuccess: () => void;
 }) {
+  const [fullName, setFullName]       = useState("");
+  const [email, setEmail]             = useState("");
+  const [phone, setPhone]             = useState("");
   const [stageName, setStageName]     = useState("");
   const [pin, setPin]                 = useState("");
   const [showPin, setShowPin]         = useState(false);
@@ -328,6 +490,9 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
 
   useEffect(() => {
     if (dancer) {
+      setFullName(dancer.full_name ?? dancer.stage_name);
+      setEmail(dancer.email ?? "");
+      setPhone(dancer.phone ?? "");
       setStageName(dancer.stage_name);
       setPin(dancer.pin_code);
       setPayoutPct(String(dancer.payout_percentage));
@@ -337,14 +502,19 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
 
   const handleSave = async () => {
     if (!dancer) return;
-    if (!stageName.trim()) { toast.error("Stage name is required"); return; }
-    if (pin.length < 4)    { toast.error("PIN must be 4–6 digits"); return; }
+    if (!fullName.trim())                        { toast.error("Full name is required"); return; }
+    if (!email.trim() || !email.includes("@"))   { toast.error("Valid email is required"); return; }
+    if (!phone.trim())                           { toast.error("Phone number is required"); return; }
+    if (pin.length < 4)                          { toast.error("PIN must be 4–6 digits"); return; }
     setSaving(true);
     const { error } = await supabase.from("dancers").update({
-      stage_name: stageName.trim(),
-      pin_code: pin,
+      full_name:         fullName.trim(),
+      email:             email.trim().toLowerCase(),
+      phone:             phone.trim(),
+      stage_name:        stageName.trim() || fullName.trim(),
+      pin_code:          pin,
       payout_percentage: parseFloat(payoutPct),
-      entrance_fee: parseFloat(entranceFee),
+      entrance_fee:      parseFloat(entranceFee),
     }).eq("id", dancer.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -353,7 +523,7 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
   };
 
   return (
-    <Modal open={!!dancer} onClose={onClose} title={`Edit — ${dancer?.stage_name ?? ""}`}>
+    <Modal open={!!dancer} onClose={onClose} title={`Edit — ${dancer?.full_name ?? dancer?.stage_name ?? ""}`}>
       <div className="px-6 py-5 space-y-4">
         {/* Enrollment status banner */}
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
@@ -363,11 +533,32 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
             : <><AlertCircle className="w-3.5 h-3.5" /> Not yet enrolled — dancer must visit door for face scan</>}
           <span className="ml-auto font-mono opacity-70">{dancer?.employee_id}</span>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5 col-span-2">
-            <Label>Stage Name <span className="text-destructive">*</span></Label>
-            <Input value={stageName} onChange={e => setStageName(e.target.value)} />
+
+        {/* Personal info */}
+        <div className="space-y-1.5">
+          <Label>Full Name (Legal) <span className="text-destructive">*</span></Label>
+          <Input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="e.g. Jessica Martinez" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Email <span className="text-destructive">*</span></Label>
+            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="dancer@example.com" />
           </div>
+          <div className="space-y-1.5">
+            <Label>Phone <span className="text-destructive">*</span></Label>
+            <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" />
+          </div>
+        </div>
+        {/* Stage names */}
+        {dancer && (
+          <StageNamesSection
+            dancerId={dancer.id}
+            onActiveChange={name => setStageName(name)}
+          />
+        )}
+
+        {/* Financial */}
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Entrance Fee ($)</Label>
             <Input type="number" value={entranceFee} onChange={e => setEntranceFee(e.target.value)} />
@@ -377,6 +568,8 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
             <Input type="number" value={payoutPct} onChange={e => setPayoutPct(e.target.value)} min={0} max={100} />
           </div>
         </div>
+
+        {/* PIN */}
         <div className="space-y-1.5">
           <Label>PIN Code <span className="text-destructive">*</span> <span className="text-xs text-muted-foreground font-normal">(4–6 digits)</span></Label>
           <div className="relative">
@@ -566,7 +759,7 @@ function DancersPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("dancers").select("*").order("stage_name");
+    const { data } = await supabase.from("dancers").select("*").order("full_name");
     setDancers((data as unknown as Dancer[]) ?? []);
     setLoading(false);
   }, []);
@@ -608,18 +801,23 @@ function DancersPanel() {
                   ${d.is_active ? "border-border bg-white" : "border-border/40 bg-secondary/20 opacity-60"}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0
                   ${d.is_active ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"}`}>
-                  {d.stage_name.charAt(0).toUpperCase()}
+                  {(d.full_name || d.stage_name).charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-foreground truncate">{d.stage_name}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-foreground truncate">{d.full_name || d.stage_name}</p>
+                    {d.stage_name && d.stage_name !== d.full_name && (
+                      <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded italic">
+                        "{d.stage_name}"
+                      </span>
+                    )}
                     {d.dancer_number != null && (
                       <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
                         D{String(d.dancer_number).padStart(3, "0")}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{d.employee_id} · {d.payout_percentage}% payout · ${d.entrance_fee} fee</p>
+                  <p className="text-xs text-muted-foreground">{d.employee_id} · {d.payout_percentage}% payout · ${d.entrance_fee} fee{d.email ? ` · ${d.email}` : ""}</p>
                 </div>
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${d.is_active ? "bg-green-50 text-green-600" : "bg-secondary text-muted-foreground"}`}>
                   {d.is_active ? "Active" : "Off"}

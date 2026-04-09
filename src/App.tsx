@@ -13,6 +13,8 @@ import DoorCheckIn from "./pages/DoorCheckIn";
 import PrivateRooms from "./pages/PrivateRooms";
 import FloorView from "./pages/FloorView";
 import ClubSettings from "./pages/ClubSettings";
+import DancerLogin from "./pages/DancerLogin";
+import DancerPortal from "./pages/DancerPortal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -45,8 +47,10 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               {/* Public */}
-              <Route path="/"      element={<Landing />} />
-              <Route path="/login" element={<Login />} />
+              <Route path="/"              element={<Landing />} />
+              <Route path="/login"         element={<Login />} />
+              <Route path="/dancer-login"  element={<DancerLogin />} />
+              <Route path="/dancer-portal" element={<DancerPortal />} />
 
               {/* Protected — role-gated */}
               <Route path="/dashboard" element={<RequireRole roles={[...DASHBOARD_ROLES]}><Dashboard /></RequireRole>} />

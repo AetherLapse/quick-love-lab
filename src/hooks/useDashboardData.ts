@@ -255,8 +255,8 @@ export function useDashboardStats(period: Period, custom?: CustomRange) {
 
     const roomSessionCount = rs.length;
 
-    // Unique dancer IDs checked in
-    const activeDancerIds = new Set(al.map((a) => a.dancer_id));
+    // Unique dancer IDs currently on shift (checked in but not yet checked out)
+    const activeDancerIds = new Set(al.filter((a) => !a.clock_out).map((a) => a.dancer_id));
     const activeDancerCount = activeDancerIds.size;
 
     return {

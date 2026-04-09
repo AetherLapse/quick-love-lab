@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { UserRound, ShieldCheck, ScanFace, LogIn, UserPlus } from "lucide-react";
+import { UserRound, ShieldCheck, LogIn, UserPlus } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
 
 const TAGLINES = [
@@ -37,7 +37,7 @@ export default function Landing() {
           </div>
 
           <button
-            onClick={() => navigate("/login?role=dancer")}
+            onClick={() => navigate("/dancer-login")}
             className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
           >
             <LogIn className="w-4 h-4" />
@@ -50,14 +50,6 @@ export default function Landing() {
           >
             <UserPlus className="w-4 h-4" />
             Create a Profile
-          </button>
-
-          <button
-            onClick={() => navigate("/face-scan")}
-            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
-          >
-            <ScanFace className="w-4 h-4" />
-            Face Scan
           </button>
         </div>
 

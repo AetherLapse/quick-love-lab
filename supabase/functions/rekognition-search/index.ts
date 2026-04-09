@@ -80,7 +80,7 @@ serve(async (req) => {
 
     const { data: dancer, error: lookupError } = await supabase
       .from("dancers")
-      .select("id, stage_name, entrance_fee, is_active")
+      .select("id, full_name, stage_name, entrance_fee, is_active")
       .eq("facial_hash", faceId)
       .single();
 
@@ -99,10 +99,11 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         matched: true,
-        dancer_id: dancer.id,
-        stage_name: dancer.stage_name,
+        dancer_id:   dancer.id,
+        full_name:   dancer.full_name,
+        stage_name:  dancer.stage_name,
         entrance_fee: dancer.entrance_fee,
-        confidence: Math.round(match.Similarity),
+        confidence:  Math.round(match.Similarity),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -154,6 +154,33 @@ export function useActiveDancers() {
   });
 }
 
+/** Returns only dancers who have checked in today and haven't clocked out yet */
+export function usePresentDancersToday() {
+  return useQuery({
+    queryKey: ["dancers_present_today"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance_log")
+        .select("dancer_id, dancers(id, stage_name, live_status, dancer_number, is_active)")
+        .eq("shift_date", today())
+        .is("clock_out", null);
+      if (error) throw error;
+      // Deduplicate by dancer_id (a dancer could theoretically have multiple open records)
+      const seen = new Set<string>();
+      const result: Array<{ id: string; stage_name: string; live_status: string | null; dancer_number: number | null }> = [];
+      for (const row of data ?? []) {
+        const d = (row as any).dancers;
+        if (d && !seen.has(d.id)) {
+          seen.add(d.id);
+          result.push(d);
+        }
+      }
+      return result;
+    },
+    refetchInterval: 15000,
+  });
+}
+
 export function useGuestVisitHistory(guestId: string | null) {
   return useQuery({
     queryKey: ["guest_visit_history", guestId],

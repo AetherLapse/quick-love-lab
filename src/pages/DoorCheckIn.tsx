@@ -11,7 +11,7 @@ import CameraIDScanner from "@/components/CameraIDScanner";
 import {
   useEntryTiers,
   useDanceTiers,
-  useActiveDancers,
+  usePresentDancersToday,
   useGuestCheckIn,
   useLogDanceSession,
   useLogRoomSession,
@@ -291,7 +291,7 @@ export default function DoorCheckIn() {
 
   const { data: entryTiers = [] }    = useEntryTiers();
   const { data: danceTiers = [] }    = useDanceTiers();
-  const { data: activeDancers = [] } = useActiveDancers();
+  const { data: activeDancers = [] } = usePresentDancersToday();
   const { data: settings }           = useClubSettings();
   const { totalGuests, totalRevenue } = useDoorStatusToday();
   const { scanAdd, manualAdd }        = useGuestCheckIn();

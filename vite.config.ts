@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "icon-192.png", "icon-512.png"],
+      includeAssets: ["favicon.ico", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "splash.png", "pwa-logo.png"],
       manifest: {
         name: "2NYT Venue Intelligence",
         short_name: "2NYT",

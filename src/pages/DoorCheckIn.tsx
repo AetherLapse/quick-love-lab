@@ -312,6 +312,8 @@ export default function DoorCheckIn() {
   const [pendingTier, setPendingTier] = useState<{ id: string; name: string; price: number; admits_count: number; requires_distributor: boolean } | null>(null);
   const [pendingQuantity, setPendingQuantity] = useState(1);
   const [selectedVendorId, setSelectedVendorId] = useState("");
+  const [manualVendorMode, setManualVendorMode] = useState(false);
+  const [manualVendorName, setManualVendorName] = useState("");
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activePanel, setActivePanel] = useState<"door" | "checkin">("door");
@@ -374,13 +376,14 @@ export default function DoorCheckIn() {
   };
 
   // ── Entry tier quick-add ─────────────────────────────────────────────────
-  const handleEntryTier = async (tierId: string, totalPrice: number, totalGuests: number, vendorId?: string) => {
+  const handleEntryTier = async (tierId: string, totalPrice: number, totalGuests: number, vendorId?: string, vendorName?: string) => {
     const uid = await getCurrentUserId();
     if (!uid) return;
     try {
-      await manualAdd.mutateAsync({ doorFee: totalPrice, loggedBy: uid, tierId, guestCount: totalGuests, vendorId: vendorId || undefined });
+      await manualAdd.mutateAsync({ doorFee: totalPrice, loggedBy: uid, tierId, guestCount: totalGuests, vendorId: vendorId || undefined, vendorName: vendorName || undefined });
       const guestLabel = totalGuests > 1 ? `${totalGuests} guests` : "1 guest";
-      toast.success(`Entry logged — ${guestLabel}${totalPrice > 0 ? ` · $${totalPrice}` : " · Free"}${vendorId ? " · vendor tracked" : ""}`);
+      const vendorLabel = vendorName ? ` · ${vendorName}` : vendorId ? " · vendor tracked" : "";
+      toast.success(`Entry logged — ${guestLabel}${totalPrice > 0 ? ` · $${totalPrice}` : " · Free"}${vendorLabel}`);
     } catch (e: any) {
       toast.error(e.message ?? "Entry failed");
     }
@@ -390,16 +393,22 @@ export default function DoorCheckIn() {
     setPendingTier(tier);
     setPendingQuantity(1);
     setSelectedVendorId("");
+    setManualVendorMode(false);
+    setManualVendorName("");
   };
 
   const confirmVendorEntry = async () => {
     if (!pendingTier) return;
     const totalGuests = pendingQuantity * pendingTier.admits_count;
     const totalPrice  = pendingQuantity * pendingTier.price;
-    await handleEntryTier(pendingTier.id, totalPrice, totalGuests, selectedVendorId || undefined);
+    const vId   = !manualVendorMode ? (selectedVendorId || undefined) : undefined;
+    const vName = manualVendorMode ? (manualVendorName.trim() || undefined) : undefined;
+    await handleEntryTier(pendingTier.id, totalPrice, totalGuests, vId, vName);
     setPendingTier(null);
     setPendingQuantity(1);
     setSelectedVendorId("");
+    setManualVendorMode(false);
+    setManualVendorName("");
   };
 
   // ── Scan entry ───────────────────────────────────────────────────────────
@@ -596,24 +605,58 @@ export default function DoorCheckIn() {
 
                   {/* Vendor picker — only for distributor-tracked tiers */}
                   {pendingTier.requires_distributor && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-2">Select vendor / distributor:</p>
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">Select vendor / distributor:</p>
+
+                      {/* Known vendors */}
                       <div className="flex gap-2 flex-wrap">
-                        {vendors.length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic">No active vendors — add in Settings → Promo Codes</p>
-                        ) : (
-                          vendors.map(v => (
-                            <button
-                              key={v.id}
-                              onClick={() => setSelectedVendorId(v.id)}
-                              className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
-                                ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
-                            >
-                              {v.name}
-                            </button>
-                          ))
-                        )}
+                        {vendors.map(v => (
+                          <button
+                            key={v.id}
+                            onClick={() => { setSelectedVendorId(v.id); setManualVendorMode(false); setManualVendorName(""); }}
+                            className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
+                              ${!manualVendorMode && selectedVendorId === v.id
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border bg-secondary/30 hover:border-primary/50"}`}
+                          >
+                            {v.name}
+                          </button>
+                        ))}
+
+                        {/* Enter Manually option */}
+                        <button
+                          onClick={() => { setManualVendorMode(true); setSelectedVendorId(""); }}
+                          className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
+                            ${manualVendorMode
+                              ? "border-amber-400 bg-amber-50 text-amber-700"
+                              : "border-dashed border-border bg-secondary/20 text-muted-foreground hover:border-amber-400/60 hover:text-amber-600"}`}
+                        >
+                          + Enter Manually
+                        </button>
                       </div>
+
+                      {/* Manual name input */}
+                      {manualVendorMode && (
+                        <div className="flex gap-2 items-center pt-1">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={manualVendorName}
+                            onChange={e => setManualVendorName(e.target.value)}
+                            placeholder="Vendor / distributor name…"
+                            className="flex-1 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-amber-400"
+                            maxLength={80}
+                          />
+                          {manualVendorName.trim() && (
+                            <span className="text-xs text-amber-600 font-medium whitespace-nowrap">Will be logged</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* No vendors warning */}
+                      {vendors.length === 0 && !manualVendorMode && (
+                        <p className="text-xs text-muted-foreground italic">No active vendors — use "Enter Manually" or add in Settings → Promo Codes</p>
+                      )}
                     </div>
                   )}
 
@@ -627,8 +670,12 @@ export default function DoorCheckIn() {
                     </button>
                     <button
                       onClick={confirmVendorEntry}
-                      disabled={manualAdd.isPending}
-                      className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                      disabled={
+                        manualAdd.isPending ||
+                        (pendingTier.requires_distributor && manualVendorMode && !manualVendorName.trim()) ||
+                        (pendingTier.requires_distributor && !manualVendorMode && !selectedVendorId)
+                      }
+                      className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold disabled:opacity-40 transition-all flex items-center justify-center gap-2"
                     >
                       {manualAdd.isPending
                         ? "Logging…"

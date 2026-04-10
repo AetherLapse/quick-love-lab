@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react";
-import { Download, FileText, Users, BarChart3, DoorOpen, Lock } from "lucide-react";
+import { Download, FileText, Users, BarChart3, DoorOpen, Lock, Tag } from "lucide-react";
 import { PanelStack } from "./DraggablePanels";
 import { toast } from "sonner";
 import { DateFilter } from "./DateFilter";
 import { type Period } from "./mockData";
 import {
   useRoomSessions, useGuestVisits, useAttendanceLogs, useDancers,
-  getDateRange, today,
+  useCustomerEntries, getDateRange, today,
 } from "@/hooks/useDashboardData";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -55,8 +55,9 @@ export function ReportsTab() {
   const { data: visits   = [], isLoading: loadVisits }   = useGuestVisits(start, end);
   const { data: logs     = [], isLoading: loadLogs }     = useAttendanceLogs(start, end);
   const { data: dancers  = [] }                          = useDancers();
+  const { data: entries  = [], isLoading: loadEntries }  = useCustomerEntries(start, end);
 
-  const loading = loadSessions || loadVisits || loadLogs;
+  const loading = loadSessions || loadVisits || loadLogs || loadEntries;
 
   // ── Derived metrics ─────────────────────────────────────────────────────────
   const metrics = useMemo(() => {
@@ -113,6 +114,40 @@ export function ReportsTab() {
     return { doorRevenue, roomGross, roomHouse, roomDancer, gross, houseNet, totalGuests, returning, newGuests, avgMin, peakHour, payroll };
   }, [sessions, visits, logs, dancers]);
 
+  // ── Vendor metrics ───────────────────────────────────────────────────────────
+  const vendorStats = useMemo(() => {
+    type VRow = { name: string; entries: number; guests: number; revenue: number; isManual: boolean; lastSeen: string };
+    const map: Record<string, VRow> = {};
+
+    const vendorEntries = entries.filter((e: any) => e.vendor_id || e.vendor_name);
+
+    vendorEntries.forEach((e: any) => {
+      const key  = e.vendor_id ?? `manual:${e.vendor_name}`;
+      const name = (e.vendors as any)?.name ?? e.vendor_name ?? "Unknown";
+      if (!map[key]) map[key] = { name, entries: 0, guests: 0, revenue: 0, isManual: !e.vendor_id, lastSeen: e.entry_time };
+      map[key].entries  += 1;
+      map[key].guests   += e.guest_count ?? 1;
+      map[key].revenue  += e.door_fee ?? 0;
+      if (e.entry_time > map[key].lastSeen) map[key].lastSeen = e.entry_time;
+    });
+
+    const rows = Object.values(map).sort((a, b) => b.guests - a.guests);
+
+    // Manual entries log (timestamped)
+    const manualLog = entries
+      .filter((e: any) => e.vendor_name && !e.vendor_id)
+      .map((e: any) => ({
+        name: e.vendor_name as string,
+        tierName: (e.entry_tiers as any)?.name ?? "—",
+        guests: e.guest_count ?? 1,
+        fee: e.door_fee ?? 0,
+        time: e.entry_time as string,
+      }))
+      .sort((a, b) => b.time.localeCompare(a.time));
+
+    return { rows, manualLog, total: vendorEntries.length };
+  }, [entries]);
+
   // ── Export handlers ──────────────────────────────────────────────────────────
   const exportShiftReport = () => {
     downloadCSV(
@@ -143,6 +178,15 @@ export function ReportsTab() {
       [metrics.payroll.map((d) => [d.stageName, d.sessions, d.grossCut.toFixed(2), d.entranceFeeOwed.toFixed(2), d.net.toFixed(2)])]
     );
     toast.success("Payout sheet downloaded");
+  };
+
+  const exportVendors = () => {
+    downloadCSV(
+      `vendor-tracking-${start}.csv`,
+      ["Vendor / Distributor", "Type", "Entries", "Guests", "Revenue", "Last Seen"],
+      [vendorStats.rows.map(v => [v.name, v.isManual ? "Manual" : "Known", v.entries, v.guests, v.revenue.toFixed(2), fmtTime(v.lastSeen)])]
+    );
+    toast.success("Vendor tracking report downloaded");
   };
 
   const exportFullPeriod = () => {
@@ -346,6 +390,109 @@ ${line}`;
                     </tfoot>
                   </table>
                 </div>
+              )}
+            </div>
+          ),
+        },
+        {
+          id: "vendors", label: "Vendor / Distributor Tracking",
+          node: (
+            <div className="glass-card p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-5 h-5 text-primary" />
+                  <h3 className="font-heading text-2xl tracking-wide">Vendor Tracking</h3>
+                </div>
+                <button
+                  onClick={exportVendors}
+                  disabled={loading || vendorStats.rows.length === 0}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all disabled:opacity-40"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export CSV
+                </button>
+              </div>
+
+              {loading ? (
+                <p className="text-muted-foreground text-sm">Loading…</p>
+              ) : vendorStats.rows.length === 0 ? (
+                <p className="text-muted-foreground text-sm italic">No vendor-tracked entries in this period.</p>
+              ) : (
+                <>
+                  {/* Summary table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground">
+                          <th className="py-2.5 px-3 text-left font-medium">Vendor / Distributor</th>
+                          <th className="py-2.5 px-3 text-center font-medium">Type</th>
+                          <th className="py-2.5 px-3 text-right font-medium">Entries</th>
+                          <th className="py-2.5 px-3 text-right font-medium">Guests</th>
+                          <th className="py-2.5 px-3 text-right font-medium">Revenue</th>
+                          <th className="py-2.5 px-3 text-right font-medium">Last Seen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vendorStats.rows.map((v, i) => (
+                          <tr key={i} className="border-b border-border/30 hover:bg-primary/5 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-foreground">{v.name}</td>
+                            <td className="py-2.5 px-3 text-center">
+                              {v.isManual
+                                ? <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">Manual</span>
+                                : <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">Known</span>}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-muted-foreground">{v.entries}</td>
+                            <td className="py-2.5 px-3 text-right text-foreground font-semibold">{v.guests}</td>
+                            <td className="py-2.5 px-3 text-right text-foreground">{fmt(v.revenue)}</td>
+                            <td className="py-2.5 px-3 text-right text-muted-foreground text-xs">{fmtTime(v.lastSeen)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border font-semibold text-foreground">
+                          <td className="py-2.5 px-3" colSpan={2}>Totals</td>
+                          <td className="py-2.5 px-3 text-right text-muted-foreground">{vendorStats.rows.reduce((s, v) => s + v.entries, 0)}</td>
+                          <td className="py-2.5 px-3 text-right">{vendorStats.rows.reduce((s, v) => s + v.guests, 0)}</td>
+                          <td className="py-2.5 px-3 text-right">{fmt(vendorStats.rows.reduce((s, v) => s + v.revenue, 0))}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Manual entries log */}
+                  {vendorStats.manualLog.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                        Manual Entries Log
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border text-muted-foreground">
+                              <th className="py-2 px-3 text-left font-medium">Time</th>
+                              <th className="py-2 px-3 text-left font-medium">Vendor Name</th>
+                              <th className="py-2 px-3 text-left font-medium">Tier</th>
+                              <th className="py-2 px-3 text-right font-medium">Guests</th>
+                              <th className="py-2 px-3 text-right font-medium">Fee</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {vendorStats.manualLog.map((e, i) => (
+                              <tr key={i} className="border-b border-border/20 hover:bg-amber-50/50 transition-colors">
+                                <td className="py-2 px-3 text-xs text-muted-foreground font-mono">{fmtTime(e.time)}</td>
+                                <td className="py-2 px-3 font-medium text-foreground">{e.name}</td>
+                                <td className="py-2 px-3 text-muted-foreground">{e.tierName}</td>
+                                <td className="py-2 px-3 text-right">{e.guests}</td>
+                                <td className="py-2 px-3 text-right">{e.fee > 0 ? fmt(e.fee) : <span className="text-muted-foreground">Free</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ),

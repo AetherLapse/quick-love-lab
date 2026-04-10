@@ -94,9 +94,9 @@ export function useCustomerEntries(start: string, end: string) {
   return useQuery({
     queryKey: ["customer_entries", start, end],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("customer_entries")
-        .select("*")
+        .select("*, vendors(id, name), entry_tiers(id, name)")
         .gte("shift_date", start)
         .lte("shift_date", end)
         .order("entry_time", { ascending: false });
@@ -824,7 +824,7 @@ export function useGuestCheckIn() {
   const qc = useQueryClient();
 
   const manualAdd = useMutation({
-    mutationFn: async ({ doorFee, loggedBy, tierId, guestCount = 1, vendorId }: { doorFee: number; loggedBy: string; tierId?: string; guestCount?: number; vendorId?: string }) => {
+    mutationFn: async ({ doorFee, loggedBy, tierId, guestCount = 1, vendorId, vendorName }: { doorFee: number; loggedBy: string; tierId?: string; guestCount?: number; vendorId?: string; vendorName?: string }) => {
       const { error } = await (supabase as any).from("customer_entries").insert({
         door_fee: doorFee,
         shift_date: today(),
@@ -832,6 +832,7 @@ export function useGuestCheckIn() {
         guest_count: guestCount,
         ...(tierId ? { entry_tier_id: tierId } : {}),
         ...(vendorId ? { vendor_id: vendorId } : {}),
+        ...(vendorName ? { vendor_name: vendorName } : {}),
       });
       if (error) throw error;
     },

@@ -112,7 +112,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Dancer "${fullName}" added — Employee ID auto-assigned`);
+    toast.success(`Dancer "${fullName}" added — Dancer ID auto-assigned`);
     reset(); onSuccess(); onClose();
   };
 
@@ -143,7 +143,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
             <div className="rounded-xl bg-secondary/40 border border-dashed border-border px-4 py-3 flex items-center gap-2">
               <Check className="w-4 h-4 text-primary shrink-0" />
               <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Employee ID</span> will be auto-assigned (e.g. EMP-004) after saving. The dancer can set a stage name later via their portal.
+                <span className="font-semibold text-foreground">Dancer ID</span> will be auto-assigned (e.g. EMP-004) after saving. The dancer can set a stage name later via their portal.
               </p>
             </div>
           </>
@@ -182,7 +182,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
               <div className="flex justify-between"><span className="text-muted-foreground">Full Name</span><span className="font-medium">{fullName}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-medium">{email}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-medium">{phone}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Employee ID</span><span className="font-medium text-primary">Auto-assigned</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Dancer ID</span><span className="font-medium text-primary">Auto-assigned</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">PIN</span><span className="font-medium">{"•".repeat(pin.length)}</span></div>
             </div>
           </>

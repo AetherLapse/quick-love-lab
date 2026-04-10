@@ -286,7 +286,7 @@ function DancerProfileDrawer({
           {/* Profile fields */}
           <div className="space-y-3 text-sm">
             {[
-              ["Employee ID", dancer.employee_id],
+              ["Dancer ID", dancer.employee_id],
               ["PIN", "••••"],
               ["Payout %", `${dancer.payout_percentage}%`],
               ["Entrance Fee", `$${dancer.entrance_fee}`],
@@ -372,7 +372,7 @@ export default function DancerManagement() {
 
   const handleSave = async () => {
     if (!form.stage_name || !form.employee_id || !form.pin_code || !form.email || !form.phone) {
-      toast.error("Stage name, employee ID, PIN, email, and phone are required.");
+      toast.error("Stage name, dancer ID, PIN, email, and phone are required.");
       return;
     }
     setSaving(true);
@@ -444,7 +444,7 @@ export default function DancerManagement() {
                     />
                   </div>
                   <div>
-                    <Label className="text-foreground">Employee ID <span className="text-destructive">*</span></Label>
+                    <Label className="text-foreground">Dancer ID <span className="text-destructive">*</span></Label>
                     <Input
                       value={form.employee_id}
                       onChange={(e) => setForm({ ...form, employee_id: e.target.value })}

@@ -109,7 +109,7 @@ export const shiftLogEvents: ShiftEvent[] = [
   { time: "9:14 PM", type: "room", icon: "room", text: "Room 2 — Session started (Dancer #4)" },
   { time: "9:12 PM", type: "checkin", icon: "checkin", text: "Dancer #4 — Entered floor" },
   { time: "8:45 PM", type: "checkin", icon: "checkin", text: "Dancer #2 — Entered floor" },
-  { time: "8:00 PM", type: "shift", icon: "shift", text: "Shift started — Manager logged in" },
+  { time: "8:00 PM", type: "shift", icon: "shift", text: "Booking started — Manager logged in" },
 ];
 
 export const activityHeatmap: Record<number, Record<string, number>> = {

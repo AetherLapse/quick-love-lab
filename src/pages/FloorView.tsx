@@ -20,7 +20,7 @@ const tabs = [
   { key: "door", label: "Door Activity" },
   { key: "rooms", label: "Rooms" },
   { key: "staff", label: "Staff & Dancers" },
-  { key: "log", label: "Shift Log" },
+  { key: "log", label: "Booking Log" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];

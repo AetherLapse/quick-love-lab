@@ -347,7 +347,7 @@ function ProfileDrawer({ dancer, onClose, onEdit, onEnroll, onToggleActive, onDe
           {/* Profile fields */}
           <div className="space-y-3 text-sm">
             {[
-              ["Employee ID", dancer.employee_id],
+              ["Dancer ID", dancer.employee_id],
               ["PIN", "••••"],
               ["Payout %", `${dancer.payout_percentage}%`],
               ["Entrance Fee", `$${dancer.entrance_fee}`],
@@ -534,7 +534,7 @@ export function SettingsTab() {
 
   const handleSave = async () => {
     if (!form.stage_name || !form.employee_id || !form.pin_code || !form.email || !form.phone) {
-      toast.error("Stage name, employee ID, PIN, email, and phone are required.");
+      toast.error("Stage name, dancer ID, PIN, email, and phone are required.");
       return;
     }
     if (!editId && !emailOtp.verified) {
@@ -662,7 +662,7 @@ export function SettingsTab() {
 
       <PanelStack storageKey="settings" panels={[
         {
-          id: "fees", label: "Fee Schedule",
+          id: "fees", label: "Fee Structure",
           node: (
             <div className="space-y-4">
               <div className="glass-card p-5 border border-primary/20 flex items-start gap-3">
@@ -682,7 +682,7 @@ export function SettingsTab() {
               ) : settings && (
                 <div className="glass-card p-6">
                   <h3 className="font-heading text-xl tracking-wide mb-4 flex items-center gap-2">
-                    <Home className="w-5 h-5 text-primary" /> Current Fee Schedule
+                    <Home className="w-5 h-5 text-primary" /> Current Fee Structure
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
@@ -810,7 +810,7 @@ export function SettingsTab() {
                 <Input value={form.stage_name} onChange={(e) => setForm({ ...form, stage_name: e.target.value })} placeholder="e.g. Crystal" className="bg-secondary mt-1" />
               </div>
               <div>
-                <Label>Employee ID <span className="text-destructive">*</span></Label>
+                <Label>Dancer ID <span className="text-destructive">*</span></Label>
                 <Input value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })} placeholder="e.g. 0042" maxLength={6} className="bg-secondary mt-1" />
               </div>
               <div>

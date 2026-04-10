@@ -47,7 +47,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       .ilike("employee_id", empId.trim())
       .single();
     setSearching(false);
-    if (err || !data) { setError("No dancer found for that Employee ID."); return; }
+    if (err || !data) { setError("No dancer found for that ID."); return; }
     setDancer(data as any);
     if ((data as any).is_enrolled) setEnrollStep("already-enrolled");
     else setEnrollStep("camera");
@@ -119,7 +119,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       {/* Step: lookup */}
       {enrollStep === "lookup" && (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Enter the dancer's Employee ID given by admin to begin enrollment.</p>
+          <p className="text-sm text-muted-foreground">Enter the dancer's ID given by admin to begin enrollment.</p>
           <div className="flex gap-2">
             <input
               value={empId}

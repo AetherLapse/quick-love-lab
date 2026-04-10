@@ -277,8 +277,8 @@ export const staffMembers = [
 ];
 
 export const pastReports = [
-  { date: "Mar 3, 2026", type: "Shift Report", period: "Tonight", by: "Admin" },
-  { date: "Mar 2, 2026", type: "Payroll Sheet", period: "Tonight", by: "Admin" },
+  { date: "Mar 3, 2026", type: "Booking Report", period: "Tonight", by: "Admin" },
+  { date: "Mar 2, 2026", type: "Payout Sheet", period: "Tonight", by: "Admin" },
   { date: "Feb 28, 2026", type: "Revenue Report", period: "This Week", by: "Admin" },
   { date: "Feb 22, 2026", type: "Revenue Report", period: "This Month", by: "Admin" },
 ];

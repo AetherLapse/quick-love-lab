@@ -166,7 +166,7 @@ export default function DancerPortal() {
           onUpdate={handleStageNameUpdate}
         />
 
-        {/* ── Shift history ── */}
+        {/* ── Booking history ── */}
         <ShiftHistoryPanel shifts={shifts} />
 
       </main>
@@ -379,7 +379,7 @@ function StageNamesPanel({
   );
 }
 
-// ─── Shift history ────────────────────────────────────────────────────────────
+// ─── Booking history ─────────────────────────────────────────────────────────
 
 function ShiftHistoryPanel({ shifts }: { shifts: Shift[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -396,7 +396,7 @@ function ShiftHistoryPanel({ shifts }: { shifts: Shift[] }) {
   return (
     <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-border/50">
-        <h2 className="text-sm font-bold text-foreground">Shift History</h2>
+        <h2 className="text-sm font-bold text-foreground">Booking History</h2>
         <p className="text-xs text-muted-foreground">Last 60 days</p>
       </div>
 

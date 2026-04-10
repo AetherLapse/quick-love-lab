@@ -133,16 +133,16 @@ export function ReportsTab() {
         ]),
       ]
     );
-    toast.success("Shift report downloaded");
+    toast.success("Booking report downloaded");
   };
 
   const exportPayroll = () => {
     downloadCSV(
-      `payroll-${start}.csv`,
+      `payout-${start}.csv`,
       ["Performer", "Sessions", "Gross Cut", "Entrance Fee Owed", "Net Payout"],
       [metrics.payroll.map((d) => [d.stageName, d.sessions, d.grossCut.toFixed(2), d.entranceFeeOwed.toFixed(2), d.net.toFixed(2)])]
     );
-    toast.success("Payroll sheet downloaded");
+    toast.success("Payout sheet downloaded");
   };
 
   const exportFullPeriod = () => {
@@ -167,7 +167,7 @@ export function ReportsTab() {
       : "  No performer sessions recorded";
 
     return `${line}
-         2NYT SHIFT REPORT
+         2NYT BOOKING REPORT
          ${dateLabel}
 ${line}
 
@@ -251,8 +251,8 @@ ${line}`;
           node: (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                { Icon: DoorOpen,  title: "Shift Report",           desc: "All door + room entries for the period",  action: exportShiftReport },
-                { Icon: Users,     title: "Dancer Payroll Sheet",   desc: "Net payout owed per performer",            action: exportPayroll },
+                { Icon: DoorOpen,  title: "Booking Report",          desc: "All door + room entries for the period",  action: exportShiftReport },
+                { Icon: Users,     title: "Dancer Payout Sheet",    desc: "Net payout owed per performer",            action: exportPayroll },
                 { Icon: BarChart3, title: "Full Revenue Report",    desc: "Aggregated revenue for selected range",    action: exportFullPeriod },
               ].map(({ Icon, title, desc, action }) => (
                 <div key={title} className="glass-card p-6 flex flex-col justify-between gap-4">
@@ -292,10 +292,10 @@ ${line}`;
           ),
         },
         {
-          id: "payroll", label: "Dancer Payroll Breakdown",
+          id: "payout", label: "Dancer Payout Breakdown",
           node: (
             <div className="glass-card p-6">
-              <h3 className="font-heading text-2xl tracking-wide mb-4">Dancer Payroll Breakdown</h3>
+              <h3 className="font-heading text-2xl tracking-wide mb-4">Dancer Payout Breakdown</h3>
               {loading ? (
                 <p className="text-muted-foreground text-sm">Loading…</p>
               ) : metrics.payroll.length === 0 ? (

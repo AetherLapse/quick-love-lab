@@ -24,7 +24,7 @@ const typeLabels: Record<ShiftEventType, string> = {
   room: "ROOM",
   alert: "ALERT",
   denied: "DENIED",
-  shift: "SHIFT",
+  shift: "BOOKING",
 };
 
 const typeColor: Record<ShiftEventType, string> = {
@@ -243,10 +243,10 @@ export default function ShiftLogTab() {
         )}
       </div>
 
-      {/* Shift Summary */}
+      {/* Booking Summary */}
       <div className="glass-card p-6 font-mono text-sm border-t-2 border-primary/30">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-6">
-          <div><span className="text-muted-foreground">Shift started:</span> <span className="text-foreground">{shiftStart}</span></div>
+          <div><span className="text-muted-foreground">Booking started:</span> <span className="text-foreground">{shiftStart}</span></div>
           <div><span className="text-muted-foreground">Current time:</span> <span className="text-foreground">{new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>
           <div><span className="text-muted-foreground">Total events:</span> <span className="text-foreground">{events.length}</span></div>
           <div><span className="text-muted-foreground">Check-ins:</span> <span className="text-foreground">{checkIns} dancers</span></div>

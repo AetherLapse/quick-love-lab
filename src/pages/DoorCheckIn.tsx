@@ -308,8 +308,9 @@ export default function DoorCheckIn() {
       .then(({ data }: any) => setVendors(data ?? []));
   }, []);
 
-  // Pending vendor-tracked tier (shows vendor picker before logging)
-  const [pendingTier, setPendingTier] = useState<{ id: string; name: string; price: number; admits_count: number } | null>(null);
+  // Pending entry confirmation
+  const [pendingTier, setPendingTier] = useState<{ id: string; name: string; price: number; admits_count: number; requires_distributor: boolean } | null>(null);
+  const [pendingQuantity, setPendingQuantity] = useState(1);
   const [selectedVendorId, setSelectedVendorId] = useState("");
 
   // ── UI state ──────────────────────────────────────────────────────────────
@@ -373,13 +374,13 @@ export default function DoorCheckIn() {
   };
 
   // ── Entry tier quick-add ─────────────────────────────────────────────────
-  const handleEntryTier = async (tierId: string, price: number, admitsCount: number, vendorId?: string) => {
+  const handleEntryTier = async (tierId: string, totalPrice: number, totalGuests: number, vendorId?: string) => {
     const uid = await getCurrentUserId();
     if (!uid) return;
     try {
-      await manualAdd.mutateAsync({ doorFee: price, loggedBy: uid, tierId, guestCount: admitsCount, vendorId: vendorId || undefined });
-      const guestLabel = admitsCount > 1 ? `${admitsCount} guests` : "1 guest";
-      toast.success(`Entry logged — ${guestLabel} · $${price}${vendorId ? " · vendor tracked" : ""}`);
+      await manualAdd.mutateAsync({ doorFee: totalPrice, loggedBy: uid, tierId, guestCount: totalGuests, vendorId: vendorId || undefined });
+      const guestLabel = totalGuests > 1 ? `${totalGuests} guests` : "1 guest";
+      toast.success(`Entry logged — ${guestLabel}${totalPrice > 0 ? ` · $${totalPrice}` : " · Free"}${vendorId ? " · vendor tracked" : ""}`);
     } catch (e: any) {
       toast.error(e.message ?? "Entry failed");
     }
@@ -387,13 +388,17 @@ export default function DoorCheckIn() {
 
   const handleTierClick = (tier: { id: string; name: string; price: number; admits_count: number; requires_distributor: boolean }) => {
     setPendingTier(tier);
+    setPendingQuantity(1);
     setSelectedVendorId("");
   };
 
   const confirmVendorEntry = async () => {
     if (!pendingTier) return;
-    await handleEntryTier(pendingTier.id, pendingTier.price, pendingTier.admits_count, selectedVendorId || undefined);
+    const totalGuests = pendingQuantity * pendingTier.admits_count;
+    const totalPrice  = pendingQuantity * pendingTier.price;
+    await handleEntryTier(pendingTier.id, totalPrice, totalGuests, selectedVendorId || undefined);
     setPendingTier(null);
+    setPendingQuantity(1);
     setSelectedVendorId("");
   };
 
@@ -534,62 +539,106 @@ export default function DoorCheckIn() {
             ))}
           </div>
 
-          {/* ── Confirm panel (all tiers require confirmation) ── */}
-          {pendingTier && (
-            <div className="bg-white rounded-2xl border-2 border-primary/30 p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between mb-3">
-                <div>
+          {/* ── Confirm panel ── */}
+          {pendingTier && (() => {
+            const totalGuests = pendingQuantity * pendingTier.admits_count;
+            const totalPrice  = pendingQuantity * pendingTier.price;
+            const isFree      = pendingTier.price === 0;
+            return (
+              <div className="bg-white rounded-2xl border-2 border-primary/20 shadow-md animate-in fade-in slide-in-from-top-2 duration-200 overflow-hidden">
+                {/* Title bar */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border/50">
                   <p className="text-sm font-bold text-foreground">{pendingTier.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {pendingTier.requires_distributor
-                      ? "Select the vendor / distributor for this card"
-                      : `Confirm entry — ${pendingTier.price === 0 ? "Free" : pendingTier.admits_count > 1 ? `$${pendingTier.price} / ${pendingTier.admits_count} people` : `$${pendingTier.price}`}`}
-                  </p>
+                  <button onClick={() => setPendingTier(null)} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <button onClick={() => setPendingTier(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              {/* Vendor picker — only for distributor-tracked tiers */}
-              {pendingTier.requires_distributor && (
-                <div className="flex gap-2 flex-wrap mb-4">
-                  {vendors.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">No active vendors — add vendors in Settings → Promo Codes</p>
-                  ) : (
-                    vendors.map(v => (
+                <div className="px-5 py-4 space-y-4">
+                  {/* ── Guest count controls ── */}
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Guests</span>
+                    <div className="flex items-center gap-3">
                       <button
-                        key={v.id}
-                        onClick={() => setSelectedVendorId(v.id)}
-                        className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
-                          ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
+                        onClick={() => setPendingQuantity(q => Math.max(1, q - 1))}
+                        disabled={pendingQuantity <= 1}
+                        className="w-10 h-10 rounded-xl border-2 border-border text-xl font-bold text-foreground hover:border-primary hover:text-primary disabled:opacity-30 transition-all active:scale-95"
                       >
-                        {v.name}
+                        −
                       </button>
-                    ))
-                  )}
-                </div>
-              )}
+                      <span className="w-8 text-center text-2xl font-bold text-foreground tabular-nums">{pendingQuantity}</span>
+                      <button
+                        onClick={() => setPendingQuantity(q => q + 1)}
+                        className="w-10 h-10 rounded-xl border-2 border-border text-xl font-bold text-foreground hover:border-primary hover:text-primary transition-all active:scale-95"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPendingTier(null)}
-                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => confirmVendorEntry()}
-                  disabled={manualAdd.isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
-                >
-                  {manualAdd.isPending
-                    ? "Logging…"
-                    : `Confirm Entry${pendingTier.requires_distributor && selectedVendorId ? "" : pendingTier.requires_distributor ? " (no vendor)" : ""}`}
-                </button>
+                  {/* ── Prominent total display ── */}
+                  <div className="rounded-2xl bg-secondary/40 px-5 py-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-3xl font-extrabold text-foreground tabular-nums">
+                        {isFree ? "Free" : `$${totalPrice}`}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {totalGuests === 1 ? "1 guest" : `${totalGuests} guests`}
+                        {pendingTier.admits_count > 1 && <span className="ml-1 text-xs">({pendingQuantity} × {pendingTier.admits_count}-pack)</span>}
+                      </p>
+                    </div>
+                    {!isFree && pendingQuantity > 1 && (
+                      <p className="text-xs text-muted-foreground text-right">
+                        ${pendingTier.price} × {pendingQuantity}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Vendor picker — only for distributor-tracked tiers */}
+                  {pendingTier.requires_distributor && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">Select vendor / distributor:</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {vendors.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No active vendors — add in Settings → Promo Codes</p>
+                        ) : (
+                          vendors.map(v => (
+                            <button
+                              key={v.id}
+                              onClick={() => setSelectedVendorId(v.id)}
+                              className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
+                                ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
+                            >
+                              {v.name}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Actions ── */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setPendingTier(null)}
+                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmVendorEntry}
+                      disabled={manualAdd.isPending}
+                      className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                    >
+                      {manualAdd.isPending
+                        ? "Logging…"
+                        : `Confirm Entry — ${isFree ? "Free" : `$${totalPrice}`}`}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ── Card Scanner (collapsible) ────────────────────────────────── */}
           <details className="bg-white rounded-2xl border border-border shadow-sm">

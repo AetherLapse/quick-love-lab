@@ -386,12 +386,8 @@ export default function DoorCheckIn() {
   };
 
   const handleTierClick = (tier: { id: string; name: string; price: number; admits_count: number; requires_distributor: boolean }) => {
-    if (tier.requires_distributor) {
-      setPendingTier(tier);
-      setSelectedVendorId("");
-    } else {
-      handleEntryTier(tier.id, tier.price, tier.admits_count);
-    }
+    setPendingTier(tier);
+    setSelectedVendorId("");
   };
 
   const confirmVendorEntry = async () => {
@@ -538,41 +534,58 @@ export default function DoorCheckIn() {
             ))}
           </div>
 
-          {/* ── Vendor picker (shown when a distributor-tracked tier is selected) ── */}
+          {/* ── Confirm panel (all tiers require confirmation) ── */}
           {pendingTier && (
             <div className="bg-white rounded-2xl border-2 border-primary/30 p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-sm font-bold text-foreground">{pendingTier.name}</p>
-                  <p className="text-xs text-muted-foreground">Select the vendor / distributor for this card</p>
+                  <p className="text-xs text-muted-foreground">
+                    {pendingTier.requires_distributor
+                      ? "Select the vendor / distributor for this card"
+                      : `Confirm entry — ${pendingTier.price === 0 ? "Free" : pendingTier.admits_count > 1 ? `$${pendingTier.price} / ${pendingTier.admits_count} people` : `$${pendingTier.price}`}`}
+                  </p>
                 </div>
                 <button onClick={() => setPendingTier(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {vendors.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No active vendors — add vendors in Settings → Promo Codes</p>
-                ) : (
-                  vendors.map(v => (
-                    <button
-                      key={v.id}
-                      onClick={() => setSelectedVendorId(v.id)}
-                      className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
-                        ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
-                    >
-                      {v.name}
-                    </button>
-                  ))
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-4">
+
+              {/* Vendor picker — only for distributor-tracked tiers */}
+              {pendingTier.requires_distributor && (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {vendors.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No active vendors — add vendors in Settings → Promo Codes</p>
+                  ) : (
+                    vendors.map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => setSelectedVendorId(v.id)}
+                        className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all
+                          ${selectedVendorId === v.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/30 hover:border-primary/50"}`}
+                      >
+                        {v.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPendingTier(null)}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                >
+                  Cancel
+                </button>
                 <button
                   onClick={() => confirmVendorEntry()}
                   disabled={manualAdd.isPending}
                   className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
                 >
-                  {manualAdd.isPending ? "Logging…" : `Confirm — $${pendingTier.price}${selectedVendorId ? "" : " (no vendor)"}`}
+                  {manualAdd.isPending
+                    ? "Logging…"
+                    : `Confirm Entry${pendingTier.requires_distributor && selectedVendorId ? "" : pendingTier.requires_distributor ? " (no vendor)" : ""}`}
                 </button>
               </div>
             </div>

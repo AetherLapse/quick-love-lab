@@ -2,76 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Camera, X, Lock, ShieldCheck, ShieldX, Hand, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
-import { DecodeHintType, BarcodeFormat } from "@zxing/library";
-
-// Module-level hints — PDF417 only for speed
-const PDF417_HINTS = new Map<DecodeHintType, unknown>();
-PDF417_HINTS.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.PDF_417]);
-
-// AAMVA PDF417 DL format parsing
-function parseAAMVA(text: string): {
-  dlNumber: string | null;
-  dobMMDDYYYY: string | null;
-  fullName: string | null;
-  address: string | null;
-} {
-  const field = (code: string) =>
-    text.match(new RegExp(`${code}([^\n\r\u001e\u001c]+)`))?.[1]?.trim() ?? null;
-
-  const lastName  = field("DCS");
-  const firstName = field("DAC");
-  const fullName  = firstName && lastName ? `${firstName} ${lastName}`
-                  : firstName ?? lastName ?? null;
-
-  const street  = field("DAG");
-  const city    = field("DAI");
-  const state   = field("DAJ");
-  const zipRaw  = field("DAK");
-  const zip     = zipRaw ? zipRaw.replace(/\D/g, "").slice(0, 5) : null;
-  const addressParts = [street, city, state, zip].filter(Boolean);
-  const address = addressParts.length > 0 ? addressParts.join(", ") : null;
-
-  return {
-    dlNumber:    field("DAQ"),
-    dobMMDDYYYY: text.match(/DBB(\d{8})/)?.[1] ?? null,
-    fullName,
-    address,
-  };
-}
-
-function parseDOB(dobStr: string): Date | null {
-  if (dobStr.length !== 8) return null;
-  let mm: number, dd: number, yyyy: number;
-  const first4 = parseInt(dobStr.slice(0, 4), 10);
-  if (first4 >= 1900 && first4 <= 2099) {
-    // YYYYMMDD — used by many barcode generators and Canadian DLs
-    yyyy = first4;
-    mm = parseInt(dobStr.slice(4, 6), 10) - 1;
-    dd = parseInt(dobStr.slice(6, 8), 10);
-  } else {
-    // MMDDYYYY — AAMVA US standard
-    mm = parseInt(dobStr.slice(0, 2), 10) - 1;
-    dd = parseInt(dobStr.slice(2, 4), 10);
-    yyyy = parseInt(dobStr.slice(4, 8), 10);
-  }
-  const date = new Date(yyyy, mm, dd);
-  return isNaN(date.getTime()) ? null : date;
-}
-
-function isOver21(dobStr: string): boolean {
-  const dob = parseDOB(dobStr);
-  if (!dob) return false; // Can't parse → deny as safe default
-  const cutoff = new Date();
-  cutoff.setFullYear(cutoff.getFullYear() - 21);
-  return dob <= cutoff;
-}
-
-async function sha256hex(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { PDF417_HINTS, parseAAMVA, isOver21, sha256hex } from "@/lib/dlScan";
 
 type ScanStep = "idle" | "camera" | "flash" | "processing" | "result" | "no_barcode";
 

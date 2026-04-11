@@ -25,7 +25,7 @@ serve(async (req) => {
     // ── 1. Dancer profile ──────────────────────────────────────────────────────
     const { data: dancer, error: dErr } = await supabase
       .from("dancers")
-      .select("id, full_name, stage_name, email, phone, employee_id, dancer_number, is_enrolled")
+      .select("id, full_name, stage_name, email, phone, enroll_id, dancer_number, is_enrolled")
       .eq("id", dancer_id)
       .single();
 

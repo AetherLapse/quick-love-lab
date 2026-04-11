@@ -36,7 +36,7 @@ const EMPTY_STAFF_FORM = { full_name: "", email: "", password: "", role: "door_s
 
 const EMPTY_FORM = {
   stage_name: "",
-  employee_id: "",
+  enroll_id: "",
   pin_code: "",
   payout_percentage: "30",
   entrance_fee: "50",
@@ -347,7 +347,7 @@ function ProfileDrawer({ dancer, onClose, onEdit, onEnroll, onToggleActive, onDe
           {/* Profile fields */}
           <div className="space-y-3 text-sm">
             {[
-              ["Dancer ID", dancer.employee_id],
+              ["Dancer ID", dancer.enroll_id],
               ["PIN", "••••"],
               ["Payout %", `${dancer.payout_percentage}%`],
               ["Entrance Fee", `$${dancer.entrance_fee}`],
@@ -476,7 +476,7 @@ export function SettingsTab() {
     setEditId(d.id);
     setForm({
       stage_name: d.stage_name,
-      employee_id: d.employee_id,
+      enroll_id: d.enroll_id,
       pin_code: d.pin_code,
       payout_percentage: String(d.payout_percentage),
       entrance_fee: String(d.entrance_fee),
@@ -533,7 +533,7 @@ export function SettingsTab() {
   };
 
   const handleSave = async () => {
-    if (!form.stage_name || !form.employee_id || !form.pin_code || !form.email || !form.phone) {
+    if (!form.stage_name || !form.enroll_id || !form.pin_code || !form.email || !form.phone) {
       toast.error("Stage name, dancer ID, PIN, email, and phone are required.");
       return;
     }
@@ -544,7 +544,7 @@ export function SettingsTab() {
     setSaving(true);
     const payload = {
       stage_name: form.stage_name.trim(),
-      employee_id: form.employee_id.trim(),
+      enroll_id: form.enroll_id.trim(),
       pin_code: form.pin_code.trim(),
       payout_percentage: parseFloat(form.payout_percentage),
       entrance_fee: parseFloat(form.entrance_fee),
@@ -811,7 +811,7 @@ export function SettingsTab() {
               </div>
               <div>
                 <Label>Dancer ID <span className="text-destructive">*</span></Label>
-                <Input value={form.employee_id} onChange={(e) => setForm({ ...form, employee_id: e.target.value })} placeholder="e.g. 0042" maxLength={6} className="bg-secondary mt-1" />
+                <Input value={form.enroll_id} onChange={(e) => setForm({ ...form, enroll_id: e.target.value })} placeholder="e.g. 0042" maxLength={6} className="bg-secondary mt-1" />
               </div>
               <div>
                 <Label>PIN Code <span className="text-destructive">*</span></Label>

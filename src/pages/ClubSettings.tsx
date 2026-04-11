@@ -20,7 +20,7 @@ const ROLE_LABELS: Record<AppRole, string> = {
 };
 
 interface Dancer {
-  id: string; full_name: string; stage_name: string; employee_id: string;
+  id: string; full_name: string; stage_name: string; enroll_id: string;
   email: string; phone: string;
   pin_code: string; payout_percentage: number; entrance_fee: number;
   is_active: boolean; dancer_number: number | null;
@@ -143,7 +143,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
             <div className="rounded-xl bg-secondary/40 border border-dashed border-border px-4 py-3 flex items-center gap-2">
               <Check className="w-4 h-4 text-primary shrink-0" />
               <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Dancer ID</span> will be auto-assigned (e.g. EMP-004) after saving. The dancer can set a stage name later via their portal.
+                <span className="font-semibold text-foreground">Dancer ID</span> will be auto-assigned (e.g. D-004) after saving. The dancer can set a stage name later via their portal.
               </p>
             </div>
           </>
@@ -531,7 +531,7 @@ function EditDancerModal({ dancer, onClose, onSuccess }: {
           {(dancer as any)?.is_enrolled
             ? <><Check className="w-3.5 h-3.5" /> Face enrolled via Rekognition</>
             : <><AlertCircle className="w-3.5 h-3.5" /> Not yet enrolled — dancer must visit door for face scan</>}
-          <span className="ml-auto font-mono opacity-70">{dancer?.employee_id}</span>
+          <span className="ml-auto font-mono opacity-70">{dancer?.enroll_id}</span>
         </div>
 
         {/* Personal info */}
@@ -817,7 +817,7 @@ function DancersPanel() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{d.employee_id} · {d.payout_percentage}% payout · ${d.entrance_fee} fee{d.email ? ` · ${d.email}` : ""}</p>
+                  <p className="text-xs text-muted-foreground">{d.enroll_id} · {d.payout_percentage}% payout · ${d.entrance_fee} fee{d.email ? ` · ${d.email}` : ""}</p>
                 </div>
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${d.is_active ? "bg-green-50 text-green-600" : "bg-secondary text-muted-foreground"}`}>
                   {d.is_active ? "Active" : "Off"}

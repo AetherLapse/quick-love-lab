@@ -681,7 +681,7 @@ export function useCheckedInDancersToday() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance_log")
-        .select("id, dancer_id, clock_in, early_leave_fine, fine_waived, dancers(id, stage_name, employee_id, entrance_fee)")
+        .select("id, dancer_id, clock_in, early_leave_fine, fine_waived, dancers(id, stage_name, enroll_id, entrance_fee)")
         .eq("shift_date", today())
         .is("clock_out", null)
         .order("clock_in", { ascending: true });
@@ -692,7 +692,7 @@ export function useCheckedInDancersToday() {
         clock_in: string;
         early_leave_fine: number;
         fine_waived: boolean;
-        dancers: { id: string; stage_name: string; employee_id: string | null; entrance_fee: number } | null;
+        dancers: { id: string; stage_name: string; enroll_id: string | null; entrance_fee: number } | null;
       }>;
     },
     refetchInterval: 15000,

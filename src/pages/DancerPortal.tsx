@@ -46,7 +46,7 @@ interface Shift {
 interface PortalData {
   dancer: {
     id: string; full_name: string; stage_name: string;
-    email: string; employee_id: string; dancer_number: number | null; is_enrolled: boolean;
+    email: string; enroll_id: string; dancer_number: number | null; is_enrolled: boolean;
   };
   stage_names: StageName[];
   shifts: Shift[];

@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import {
-  FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward,
+  FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward, LogOut,
 } from "lucide-react";
+import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { toast } from "sonner";
 import DancerCheckInTab from "@/components/door/DancerCheckInTab";
@@ -317,6 +318,7 @@ export default function DoorCheckIn() {
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activePanel, setActivePanel] = useState<"door" | "checkin">("door");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   // Selected dancers for a session (supports multiple)
@@ -698,6 +700,23 @@ export default function DoorCheckIn() {
             </div>
           </details>
 
+          {/* ── Dancer Check-Out button ──────────────────────────────────── */}
+          <button
+            onClick={() => setCheckoutOpen(true)}
+            className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 hover:bg-orange-100 transition-all group shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center shrink-0 group-hover:bg-orange-600 transition-colors">
+                <LogOut className="w-5 h-5 text-white" />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-base text-orange-800">Dancer Check-Out</p>
+                <p className="text-xs text-orange-600">Requires dancer PIN or face scan</p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-orange-400 group-hover:text-orange-600 transition-colors" />
+          </button>
+
           {/* ── Dancer grid ──────────────────────────────────────────────── */}
           <div className="bg-white rounded-2xl border border-border p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
@@ -873,6 +892,11 @@ export default function DoorCheckIn() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Dancer Check-Out modal ────────────────────────────────────────── */}
+      {checkoutOpen && (
+        <DancerCheckOutFlow onClose={() => setCheckoutOpen(false)} />
       )}
     </AppLayout>
   );

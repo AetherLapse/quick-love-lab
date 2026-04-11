@@ -207,7 +207,7 @@ export type Database = {
         Row: {
           created_at: string
           email: string | null
-          employee_id: string
+          enroll_id: string
           entrance_fee: number
           facial_hash: string | null
           full_name: string | null
@@ -228,7 +228,7 @@ export type Database = {
         Insert: {
           created_at?: string
           email?: string | null
-          employee_id: string
+          enroll_id: string
           entrance_fee?: number
           facial_hash?: string | null
           full_name?: string | null
@@ -249,7 +249,7 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string | null
-          employee_id?: string
+          enroll_id?: string
           entrance_fee?: number
           facial_hash?: string | null
           full_name?: string | null
@@ -343,7 +343,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
-          employee_id: string | null
+          enroll_id: string | null
           full_name: string
           id: string
           is_active: boolean
@@ -353,7 +353,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          employee_id?: string | null
+          enroll_id?: string | null
           full_name: string
           id?: string
           is_active?: boolean
@@ -363,7 +363,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          employee_id?: string | null
+          enroll_id?: string | null
           full_name?: string
           id?: string
           is_active?: boolean

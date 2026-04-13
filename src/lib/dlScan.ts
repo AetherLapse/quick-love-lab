@@ -114,6 +114,25 @@ export async function attachPDF417Decoder(
   return controls;
 }
 
+/**
+ * AES-256-GCM encrypt a string.
+ * Key is derived via SHA-256 of the provided key material.
+ * Returns base64-encoded ciphertext + IV — never stores plain text in the DB.
+ */
+export async function encryptField(
+  plaintext: string,
+  keyMaterial: string
+): Promise<{ ciphertext: string; iv: string }> {
+  const enc       = new TextEncoder();
+  const keyHash   = await crypto.subtle.digest("SHA-256", enc.encode(keyMaterial));
+  const cryptoKey = await crypto.subtle.importKey("raw", keyHash, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv        = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, enc.encode(plaintext));
+  const toB64 = (buf: ArrayBuffer | Uint8Array) =>
+    btoa(String.fromCharCode(...new Uint8Array(buf instanceof ArrayBuffer ? buf : (buf as Uint8Array).buffer)));
+  return { ciphertext: toB64(encrypted), iv: toB64(iv) };
+}
+
 /** Decode a single frame from a data-URL image. */
 export async function decodeFromDataURL(dataUrl: string): Promise<string> {
   const reader = new BrowserMultiFormatReader(PDF417_HINTS);

@@ -17,7 +17,7 @@ const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 async function callCheckout(action: string, payload: Record<string, unknown>) {
   const res = await fetch(`${EDGE_BASE}/dancer-checkout`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": ANON_KEY },
+    headers: { "Content-Type": "application/json", "apikey": ANON_KEY, "Authorization": `Bearer ${ANON_KEY}` },
     body: JSON.stringify({ action, ...payload }),
   });
   return res.json();
@@ -133,7 +133,10 @@ function CheckoutSummary({
   const [validating, setValidating] = useState(false);
   const [validCode, setValidCode]   = useState<{ id: string; reason: string } | null>(null);
 
-  const hasFine = (() => { const h = new Date().getHours(); return h >= 18 && h <= 23; })();
+  const hasFine = (() => {
+    const now = new Date(); const h = now.getHours(); const m = now.getMinutes();
+    return (h >= 18) || (h < 2) || (h === 2 && m < 45);
+  })();
 
   const fmt  = (n: number) => `$${Math.abs(n).toFixed(2)}`;
   const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -143,15 +146,26 @@ function CheckoutSummary({
     setValidating(true); setCodeError(null); setValidCode(null);
     const { data, error } = await (supabase as any)
       .from("early_leave_codes")
-      .select("id, reason, dancer_id, used")
+      .select("id, reason, dancer_id, valid_from, valid_until")
       .eq("code", waiverCode.trim().toUpperCase())
       .eq("shift_date", new Date().toISOString().slice(0, 10))
       .maybeSingle();
     setValidating(false);
     if (error || !data) { setCodeError("Code not found"); return; }
-    if (data.used) { setCodeError("Code already used"); return; }
     if (data.dancer_id && data.dancer_id !== dancer.dancer_id) {
       setCodeError("Code not valid for this dancer"); return;
+    }
+    if (data.valid_from && data.valid_until) {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const [fh, fm] = data.valid_from.slice(0, 5).split(":").map(Number);
+      const [uh, um] = data.valid_until.slice(0, 5).split(":").map(Number);
+      const fromMins = fh * 60 + fm;
+      const untilMins = uh * 60 + um;
+      const inWindow = fromMins <= untilMins
+        ? nowMins >= fromMins && nowMins <= untilMins
+        : nowMins >= fromMins || nowMins <= untilMins;
+      if (!inWindow) { setCodeError(`Code only valid ${data.valid_from.slice(0,5)}–${data.valid_until.slice(0,5)}`); return; }
     }
     setValidCode({ id: data.id, reason: data.reason });
   };
@@ -346,7 +360,7 @@ function FaceScanStep({
     try {
       const res = await fetch(`${EDGE_BASE}/rekognition-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": ANON_KEY },
+        headers: { "Content-Type": "application/json", "apikey": ANON_KEY, "Authorization": `Bearer ${ANON_KEY}` },
         body: JSON.stringify({ image_base64: base64 }),
       });
       const data = await res.json();
@@ -494,7 +508,10 @@ export function DancerCheckOutFlow({ onClose }: CheckOutFlowProps) {
 
   const handleConfirmCheckout = async (waiveWithCode: boolean, codeId?: string) => {
     if (!selectedDancer || !user) return;
-    const hasFine = (() => { const h = new Date().getHours(); return h >= 18 && h <= 23; })();
+    const hasFine = (() => {
+      const now = new Date(); const h = now.getHours(); const m = now.getMinutes();
+      return (h >= 18) || (h < 2) || (h === 2 && m < 45);
+    })();
     const fine    = hasFine && !waiveWithCode ? EARLY_LEAVE_FINE_AMOUNT : 0;
     const waived  = hasFine && waiveWithCode;
     setConfirming(true);

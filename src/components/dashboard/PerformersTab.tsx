@@ -153,6 +153,8 @@ function EarlyLeavePermitsPanel() {
 
   const [reason, setReason]           = useState("");
   const [dancerId, setDancerId]       = useState("");
+  const [validFrom, setValidFrom]     = useState("");
+  const [validUntil, setValidUntil]   = useState("");
   const [lastCode, setLastCode]       = useState<string | null>(null);
   const [open, setOpen]               = useState(false);
 
@@ -164,9 +166,11 @@ function EarlyLeavePermitsPanel() {
       reason: reason.trim(),
       dancerId: dancerId || undefined,
       generatedBy: user.id,
+      validFrom:  validFrom  || undefined,
+      validUntil: validUntil || undefined,
     });
     setLastCode(result.code);
-    setReason(""); setDancerId("");
+    setReason(""); setDancerId(""); setValidFrom(""); setValidUntil("");
   };
 
   const formatTime = (iso: string) =>
@@ -182,9 +186,9 @@ function EarlyLeavePermitsPanel() {
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-primary" />
           <span className="font-semibold text-sm text-foreground">Early Leave Permits</span>
-          {codes.filter(c => !c.used).length > 0 && (
+          {codes.length > 0 && (
             <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-              {codes.filter(c => !c.used).length} active
+              {codes.length} tonight
             </span>
           )}
         </div>
@@ -195,7 +199,7 @@ function EarlyLeavePermitsPanel() {
         <div className="px-5 pb-5 space-y-5 border-t border-border/40">
           {/* Generate form */}
           <div className="pt-4 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Generate One-Time Code</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Generate Code</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Reason <span className="text-destructive">*</span></label>
@@ -218,6 +222,24 @@ function EarlyLeavePermitsPanel() {
                     <option key={d.id} value={d.id}>{d.stage_name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Valid From (leave empty for no restriction)</label>
+                <input
+                  type="time"
+                  value={validFrom}
+                  onChange={e => setValidFrom(e.target.value)}
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Valid Until</label>
+                <input
+                  type="time"
+                  value={validUntil}
+                  onChange={e => setValidUntil(e.target.value)}
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
               </div>
             </div>
             <button
@@ -253,23 +275,24 @@ function EarlyLeavePermitsPanel() {
             ) : (
               <div className="space-y-1.5">
                 {codes.map(c => (
-                  <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm
-                    ${c.used ? "border-border/40 bg-secondary/20 opacity-60" : "border-green-200 bg-green-50/50"}`}>
-                    <span className={`font-mono font-bold tracking-widest text-base ${c.used ? "text-muted-foreground" : "text-green-800"}`}>
+                  <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-green-200 bg-green-50/50 text-sm">
+                    <span className="font-mono font-bold tracking-widest text-base text-green-800">
                       {c.code}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{c.reason}</p>
                       {c.dancers && <p className="text-[10px] text-muted-foreground">For: {c.dancers.stage_name}</p>}
+                      {c.valid_from && c.valid_until && (
+                        <p className="text-[10px] text-amber-700 font-semibold">
+                          Window: {c.valid_from.slice(0, 5)} – {c.valid_until.slice(0, 5)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <Clock className="w-3 h-3 text-muted-foreground" />
                       <span className="text-[10px] text-muted-foreground">{formatTime(c.created_at)}</span>
                     </div>
-                    {c.used
-                      ? <span className="text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full shrink-0">Used</span>
-                      : <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">Active</span>
-                    }
+                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">Active</span>
                   </div>
                 ))}
               </div>

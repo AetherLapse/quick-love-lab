@@ -13,10 +13,11 @@ import {
   ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle, Plus, X,
 } from "lucide-react";
 
-type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom";
+type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "bartender" | "dj" | "backroom_tv";
 const ROLE_LABELS: Record<AppRole, string> = {
   owner: "Owner", admin: "Admin", manager: "Manager",
   door_staff: "Door Staff", room_attendant: "Room Attendant", house_mom: "House Mom",
+  bartender: "Bartender", dj: "DJ", backroom_tv: "Backroom TV",
 };
 
 interface Dancer {

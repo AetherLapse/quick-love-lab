@@ -9,10 +9,13 @@ import { SettingsTab } from "@/components/dashboard/SettingsTab";
 import { GuestsTab } from "@/components/dashboard/GuestsTab";
 import { StageManagementTab } from "@/components/dashboard/StageManagementTab";
 import { KiosksTab } from "@/components/dashboard/KiosksTab";
+import { LogsTab } from "@/components/dashboard/LogsTab";
 import { useAuth } from "@/hooks/useAuth";
 
-const tabs = ["Summary", "Revenue", "Performers", "Guests", "Stage", "Reports", "Settings", "Kiosks"] as const;
+const tabs = ["Summary", "Revenue", "Performers", "Guests", "Stage", "Reports", "Logs", "Settings", "Kiosks"] as const;
 type Tab = typeof tabs[number];
+
+const OWNER_MANAGER_TABS: Tab[] = ["Logs", "Settings", "Kiosks"];
 
 const TAB_TITLES: Record<Tab, string> = {
   Summary:    "Dashboard",
@@ -21,6 +24,7 @@ const TAB_TITLES: Record<Tab, string> = {
   Guests:     "Guests",
   Stage:      "Stage Management",
   Reports:    "Reports",
+  Logs:       "Staff Action Logs",
   Settings:   "Settings",
   Kiosks:     "Active Kiosks",
 };
@@ -42,8 +46,11 @@ export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab ?? "Summary");
   // Track which tabs have been visited — once mounted, keep them alive (avoids re-fetch on switch)
   const [mounted, setMounted] = useState<Set<Tab>>(() => new Set([defaultTab ?? "Summary"]));
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const time = useCurrentTime();
+
+  const isOwnerManager = role === "admin" || role === "owner" || role === "manager";
+  const visibleTabs = tabs.filter(t => !OWNER_MANAGER_TABS.includes(t) || isOwnerManager);
 
   const switchTab = (tab: Tab) => {
     setActiveTab(tab);
@@ -74,6 +81,7 @@ export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
       {activeTab === "Guests"     && <GuestsTab />}
       {activeTab === "Stage"      && <StageManagementTab />}
       {activeTab === "Reports"    && <ReportsTab />}
+      {activeTab === "Logs"       && <LogsTab />}
       {activeTab === "Settings"   && <SettingsTab />}
       {activeTab === "Kiosks"     && <KiosksTab />}
     </AppLayout>

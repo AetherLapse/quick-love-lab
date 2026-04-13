@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import {
   FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward, LogOut,
+  DoorOpen, Users, TrendingUp, TrendingDown, BedDouble, Loader2,
 } from "lucide-react";
 import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage, useElapsed } from "@/contexts/StageContext";
@@ -20,8 +20,230 @@ import {
   useActiveRoomSessions,
   useDoorStatusToday,
   useClubSettings,
+  useAttendanceLogs,
+  useRoomSessions,
+  today,
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
+
+// ─── Report Modals ────────────────────────────────────────────────────────────
+
+type ReportType = "door" | "dancer" | "full";
+
+function ReportModal({ type, onClose }: { type: ReportType; onClose: () => void }) {
+  const todayStr  = today();
+  const { rows: doorRows, totalGuests, totalRevenue, isLoading: doorLoading } = useDoorStatusToday();
+  const { data: attendance = [], isLoading: attLoading } = useAttendanceLogs(todayStr, todayStr);
+  const { data: roomSessions = [], isLoading: roomLoading } = useRoomSessions(todayStr, todayStr);
+
+  const isLoading = doorLoading || attLoading || roomLoading;
+
+  const MUSIC_FEE = 20; // fixed $20 per dancer per night
+
+  const fmtCur  = (n: number) => `$${Number(n).toFixed(2)}`;
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const dateLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+  // Dancer summary from attendance
+  const dancerSummary = useMemo(() => {
+    return (attendance as any[]).map((a: any) => {
+      const roomCut    = (roomSessions as any[])
+        .filter((r: any) => r.dancer_id === a.dancer_id)
+        .reduce((s: number, r: any) => s + Number(r.dancer_cut ?? 0), 0);
+      const earlyFine  = Number(a.early_leave_fine ?? 0);
+      const houseFee   = Number(a.entrance_fee_amount ?? 0);
+      const net        = roomCut - houseFee - MUSIC_FEE - earlyFine;
+      return {
+        id:          a.dancer_id,
+        name:        a.dancers?.stage_name ?? "Unknown",
+        clockIn:     a.clock_in,
+        clockOut:    a.clock_out,
+        houseFee,
+        musicFee:    MUSIC_FEE,
+        roomCut,
+        earlyFine,
+        net,
+        sessions:    (roomSessions as any[]).filter((r: any) => r.dancer_id === a.dancer_id).length,
+      };
+    });
+  }, [attendance, roomSessions]);
+
+  const totalRoomRevenue = (roomSessions as any[]).reduce((s: number, r: any) => s + Number(r.house_cut ?? 0), 0);
+  const totalHouseFees   = (attendance as any[]).reduce((s: number, a: any) => s + Number(a.entrance_fee_amount ?? 0), 0);
+  const totalMusicFees   = dancerSummary.length * MUSIC_FEE;
+  const grossTotal       = totalRevenue + totalHouseFees + totalMusicFees + totalRoomRevenue;
+
+  const titles: Record<ReportType, string> = {
+    door:   "Door Report",
+    dancer: "Dancer Report",
+    full:   "Full Night Report",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p className="font-bold text-lg text-foreground">{titles[type]}</p>
+              <p className="text-xs text-muted-foreground">{dateLabel}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-secondary text-muted-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-7 h-7 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              {/* ── DOOR SECTION ── */}
+              {(type === "door" || type === "full") && (
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <DoorOpen className="w-4 h-4 text-primary" />
+                    <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground">Door Entry</h3>
+                  </div>
+
+                  {/* KPI row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-primary/5 border border-primary/10 p-4">
+                      <p className="text-xs text-muted-foreground mb-1">Total Guests</p>
+                      <p className="text-2xl font-extrabold text-foreground">{totalGuests}</p>
+                    </div>
+                    <div className="rounded-2xl bg-green-500/5 border border-green-500/10 p-4">
+                      <p className="text-xs text-muted-foreground mb-1">Door Revenue</p>
+                      <p className="text-2xl font-extrabold text-green-600">{fmtCur(totalRevenue)}</p>
+                    </div>
+                  </div>
+
+                  {/* Tier breakdown */}
+                  {doorRows.length > 0 && (
+                    <div className="rounded-2xl border border-border overflow-hidden">
+                      <div className="px-4 py-2.5 bg-secondary/30 flex items-center">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">Tier</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider w-16 text-right">Guests</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20 text-right">Revenue</p>
+                      </div>
+                      {doorRows.map((r, i) => (
+                        <div key={r.id} className={`flex items-center px-4 py-3 text-sm ${i > 0 ? "border-t border-border/40" : ""}`}>
+                          <div className="flex-1">
+                            <p className="font-medium text-foreground">{r.name}</p>
+                            <p className="text-xs text-muted-foreground">{fmtCur(r.price)} / person</p>
+                          </div>
+                          <p className="w-16 text-right font-semibold text-foreground">{r.guestCount}</p>
+                          <p className="w-20 text-right font-bold text-green-600">{fmtCur(r.revenue)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* ── DANCER SECTION ── */}
+              {(type === "dancer" || type === "full") && (
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-primary" />
+                    <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground">Dancer Summary</h3>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl bg-primary/5 border border-primary/10 p-4">
+                      <p className="text-xs text-muted-foreground mb-1">Checked In</p>
+                      <p className="text-2xl font-extrabold text-foreground">{dancerSummary.length}</p>
+                    </div>
+                    <div className="rounded-2xl bg-pink-500/5 border border-pink-500/10 p-4">
+                      <p className="text-xs text-muted-foreground mb-1">House Fees</p>
+                      <p className="text-2xl font-extrabold text-pink-600">{fmtCur(totalHouseFees)}</p>
+                    </div>
+                    <div className="rounded-2xl bg-violet-500/5 border border-violet-500/10 p-4">
+                      <p className="text-xs text-muted-foreground mb-1">Music Fees</p>
+                      <p className="text-2xl font-extrabold text-violet-600">{fmtCur(totalMusicFees)}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">${MUSIC_FEE} × {dancerSummary.length}</p>
+                    </div>
+                  </div>
+
+                  {dancerSummary.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No dancers checked in today</p>
+                  ) : (
+                    <div className="rounded-2xl border border-border overflow-hidden">
+                      <div className="px-4 py-2.5 bg-secondary/30 grid grid-cols-[1fr_auto_auto_auto] gap-3">
+                        {["Dancer", "In / Out", "Rooms", "Net"].map(h => (
+                          <p key={h} className="text-xs font-semibold text-muted-foreground uppercase tracking-wider last:text-right">{h}</p>
+                        ))}
+                      </div>
+                      {dancerSummary.map((d, i) => (
+                        <div key={d.id} className={`px-4 py-3 grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center text-sm ${i > 0 ? "border-t border-border/40" : ""}`}>
+                          <div>
+                            <p className="font-semibold text-foreground">{d.name}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              House {fmtCur(d.houseFee)} · Music {fmtCur(d.musicFee)}
+                              {d.earlyFine > 0 && <span className="text-orange-500"> · Early fine {fmtCur(d.earlyFine)}</span>}
+                            </p>
+                          </div>
+                          <div className="text-xs text-muted-foreground text-center whitespace-nowrap">
+                            <p>{fmtTime(d.clockIn)}</p>
+                            <p>{d.clockOut ? fmtTime(d.clockOut) : <span className="text-green-500">Active</span>}</p>
+                          </div>
+                          <p className="text-center text-muted-foreground">{d.sessions}</p>
+                          <p className={`text-right font-bold ${d.net >= 0 ? "text-green-600" : "text-red-500"}`}>
+                            {d.net >= 0 ? "+" : ""}{fmtCur(d.net)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* ── FULL REPORT TOTALS ── */}
+              {type === "full" && (
+                <section className="rounded-2xl bg-foreground/5 border border-border p-4 space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Night Summary</p>
+                  {[
+                    { label: "Door Revenue",   value: totalRevenue,      color: "text-foreground" },
+                    { label: "House Fees",      value: totalHouseFees,    color: "text-foreground" },
+                    { label: "Music Fees",      value: totalMusicFees,    color: "text-foreground" },
+                    { label: "Room Revenue",    value: totalRoomRevenue,  color: "text-foreground" },
+                  ].map(row => (
+                    <div key={row.label} className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{row.label}</span>
+                      <span className={`font-semibold ${row.color}`}>{fmtCur(row.value)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-border pt-2 flex justify-between">
+                    <span className="font-bold text-foreground">Gross Total</span>
+                    <span className="font-extrabold text-primary text-lg">{fmtCur(grossTotal)}</span>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-secondary hover:bg-secondary/80 text-sm font-semibold text-foreground transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -288,7 +510,7 @@ function ActiveRoomSessionsStrip({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DoorCheckIn() {
-  const navigate = useNavigate();
+  const [reportType, setReportType] = useState<ReportType | null>(null);
 
   const { data: entryTiers = [] }    = useEntryTiers();
   const { data: danceTiers = [] }    = useDanceTiers();
@@ -878,15 +1100,15 @@ export default function DoorCheckIn() {
 
           {/* ── Report shortcuts ─────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => navigate("/reports?type=door")}
+            <button onClick={() => setReportType("door")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
               <FileText className="w-4 h-4" /> Run Door Report
             </button>
-            <button onClick={() => navigate("/reports?type=dancer")}
+            <button onClick={() => setReportType("dancer")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
               <FileText className="w-4 h-4" /> Run Dancer Report
             </button>
-            <button onClick={() => navigate("/reports?type=full")}
+            <button onClick={() => setReportType("full")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
               <FileText className="w-4 h-4" /> Run Full Report
             </button>
@@ -897,6 +1119,10 @@ export default function DoorCheckIn() {
       {/* ── Dancer Check-Out modal ────────────────────────────────────────── */}
       {checkoutOpen && (
         <DancerCheckOutFlow onClose={() => setCheckoutOpen(false)} />
+      )}
+
+      {reportType && (
+        <ReportModal type={reportType} onClose={() => setReportType(null)} />
       )}
     </AppLayout>
   );

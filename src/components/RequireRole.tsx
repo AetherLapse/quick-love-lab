@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom";
+type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "backroom_tv" | "bartender" | "dj";
 
 // Default landing page per role after login / when redirected from unauthorized route
 export const ROLE_HOME: Record<string, string> = {
@@ -13,6 +13,9 @@ export const ROLE_HOME: Record<string, string> = {
   house_mom:      "/dashboard",
   door_staff:     "/door",
   room_attendant: "/rooms",
+  backroom_tv:    "/backroom",
+  bartender:      "/backroom",
+  dj:             "/backroom",
 };
 
 interface RequireRoleProps {

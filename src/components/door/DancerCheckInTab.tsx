@@ -1,10 +1,62 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight } from "lucide-react";
+import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X } from "lucide-react";
 import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import DLEnrollScanner, { type DLScanResult } from "@/components/door/DLEnrollScanner";
+import { encryptField } from "@/lib/dlScan";
+
+// ─── Ban blocked alert ────────────────────────────────────────────────────────
+function BanBlockedModal({
+  name, reason, enrollId, onClose,
+}: {
+  name: string; reason: string | null; enrollId: string; onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-3xl bg-red-950 border-2 border-red-500 shadow-2xl shadow-red-500/30 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 border-2 border-red-500 flex items-center justify-center">
+              <Ban className="w-6 h-6 text-red-400" />
+            </div>
+            <div>
+              <p className="text-red-400 text-xs font-bold uppercase tracking-widest">Entry Blocked</p>
+              <p className="text-white text-xl font-extrabold leading-tight">{name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 pb-6 space-y-4 mt-3">
+          <div className="rounded-2xl bg-red-900/50 border border-red-500/40 p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-200 text-sm font-semibold">This performer is permanently banned</p>
+                {reason && <p className="text-red-300/80 text-xs mt-1">Reason: {reason}</p>}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-red-400/70">
+            <Shield className="w-3 h-3" />
+            <span>ID: {enrollId} · Alert logged</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-2xl bg-red-500 hover:bg-red-400 text-white font-bold text-sm transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface DancerLogEntry {
   name: string;
@@ -25,6 +77,23 @@ type EnrollStep = "staff_pin" | "dl_scan" | "details" | "face" | "processing" | 
 const EDGE_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 const ANON_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
 
+function calcAge(dobISO: string | null): number | null {
+  if (!dobISO) return null;
+  const dob   = new Date(dobISO);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+function formatSSN(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 9);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
 function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
   const [step, setStep]         = useState<EnrollStep>("staff_pin");
@@ -38,6 +107,8 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const [verifying, setVerifying] = useState(false);
   const [newDancerId, setNewDancerId] = useState<string | null>(null);
   const [error, setError]       = useState<string | null>(null);
+  const [ssn, setSsn]           = useState("");
+  const [ssnErr, setSsnErr]     = useState<string | null>(null);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -86,6 +157,21 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const handleDetailsConfirm = async () => {
     if (!stageName.trim()) { setPinErr("Stage name is required"); return; }
     if (dancerPin.length < 4) { setPinErr("PIN must be at least 4 digits"); return; }
+
+    // Hard under-18 enforcement — defensive double-check
+    const age = calcAge(dlData?.dobISO ?? null);
+    if (age !== null && age < 18) {
+      setPinErr("Registration blocked — dancer is under 18.");
+      return;
+    }
+
+    // SSN validation
+    const ssnDigits = ssn.replace(/\D/g, "");
+    if (ssnDigits.length > 0 && ssnDigits.length !== 9) {
+      setSsnErr("SSN must be 9 digits (XXX-XX-XXXX)");
+      return;
+    }
+    setSsnErr(null);
     setPinErr(null);
 
     // Auto-generate enroll_id
@@ -93,7 +179,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
 
     const insertData: Record<string, any> = {
       stage_name:   stageName.trim(),
-      enroll_id:  enrollId,
+      enroll_id:    enrollId,
       pin_code:     dancerPin,
       full_name:    dlData?.fullName ?? stageName.trim(),
       is_active:    true,
@@ -107,6 +193,13 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       insertData.dl_address   = dlData.address;
     }
     if (phone.trim()) insertData.phone = phone.trim();
+
+    // Encrypt SSN before storing — AES-256-GCM, never plain text
+    if (ssnDigits.length === 9) {
+      const { ciphertext, iv } = await encryptField(ssnDigits, ANON_KEY);
+      insertData.ssn_encrypted = ciphertext;
+      insertData.ssn_iv        = iv;
+    }
 
     const { data: inserted, error: insErr } = await (supabase as any)
       .from("dancers")
@@ -155,7 +248,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const resetAll = () => {
     setStep("staff_pin"); setDlData(null); setStageName(""); setPhone("");
     setDancerPin(""); setStaffPin(""); setStaffPinErr(null); setPinErr(null);
-    setNewDancerId(null); setError(null);
+    setNewDancerId(null); setError(null); setSsn(""); setSsnErr(null);
   };
 
   // ── Step indicators ────────────────────────────────────────────────────────
@@ -240,12 +333,35 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       )}
 
       {/* ── Details form ──────────────────────────────────────────────────── */}
-      {step === "details" && dlData && (
+      {step === "details" && dlData && (() => {
+        const age = calcAge(dlData.dobISO);
+        // Hard block — should never reach here if DLEnrollScanner is working, but enforce defensively
+        if (age !== null && age < 18) {
+          return (
+            <div className="space-y-4">
+              <div className="bg-red-50 border-2 border-red-300 rounded-xl px-5 py-5 text-center space-y-2">
+                <AlertTriangle className="w-8 h-8 text-red-500 mx-auto" />
+                <p className="font-bold text-red-800 text-lg">Registration Blocked</p>
+                <p className="text-sm text-red-700">Dancer is {age} years old — minimum age is 18.</p>
+                <p className="text-xs text-red-600">This is a hard system restriction. No override available.</p>
+              </div>
+              <button onClick={() => setStep("dl_scan")} className="w-full py-2.5 rounded-xl border border-border text-sm font-medium transition-all">
+                ← Scan Different ID
+              </button>
+            </div>
+          );
+        }
+        return (
         <div className="space-y-4">
-          {/* DL data summary (readonly) */}
+          {/* DL data summary + age badge */}
           <div className="rounded-xl border border-border overflow-hidden">
-            <div className="px-4 py-2 bg-secondary/40 border-b border-border">
+            <div className="px-4 py-2 bg-secondary/40 border-b border-border flex items-center justify-between">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">From Driver's License</p>
+              {age !== null && (
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${age >= 21 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  Age {age}{age >= 21 ? " ✓ 21+" : " · 18–20"}
+                </span>
+              )}
             </div>
             <div className="divide-y divide-border/60">
               {[
@@ -270,6 +386,31 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
               placeholder="Working name / stage name"
               className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm focus:outline-none focus:border-primary"
             />
+          </div>
+
+          {/* SSN — encrypted before storage */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              Social Security Number
+              <span className="normal-case font-normal text-muted-foreground">(AES-256 encrypted)</span>
+            </label>
+            <div className="relative">
+              <input
+                value={ssn}
+                onChange={e => { setSsn(formatSSN(e.target.value)); setSsnErr(null); }}
+                placeholder="XXX-XX-XXXX"
+                inputMode="numeric"
+                maxLength={11}
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm font-mono focus:outline-none focus:border-primary tracking-widest"
+              />
+              {ssn.replace(/\D/g, "").length === 9 && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-600">
+                  <Shield className="w-4 h-4" />
+                </div>
+              )}
+            </div>
+            {ssnErr && <p className="text-xs text-destructive">{ssnErr}</p>}
+            <p className="text-xs text-muted-foreground">Stored encrypted — never readable in plain text</p>
           </div>
 
           {/* Phone (optional) */}
@@ -314,7 +455,8 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
             Continue to Face Scan
           </button>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Face scan ─────────────────────────────────────────────────────── */}
       {step === "face" && (
@@ -399,11 +541,10 @@ function CheckOutPanel({ onBack }: { onBack: () => void }) {
   const [validating, setValidating] = useState(false);
   const [validCode, setValidCode]   = useState<{ id: string; reason: string } | null>(null);
 
-  // Fine applies if current time is before midnight (hour 0–23 on the shift day, after 6 PM)
-  // After midnight (hour 0–5 AM next day) → no fine.
+  // Fine applies from 6 PM through 2:29 AM (early leave cutoff)
   const hasFine = (() => {
-    const h = new Date().getHours();
-    return h >= 18 && h <= 23; // 6 PM – 11:59 PM = before midnight, fine applies
+    const now = new Date(); const h = now.getHours(); const m = now.getMinutes();
+    return (h >= 18) || (h < 2) || (h === 2 && m < 45);
   })();
 
   const validateCode = async () => {
@@ -411,15 +552,26 @@ function CheckOutPanel({ onBack }: { onBack: () => void }) {
     setValidating(true); setCodeError(null); setValidCode(null);
     const { data, error } = await (supabase as any)
       .from("early_leave_codes")
-      .select("id, reason, dancer_id, used")
+      .select("id, reason, dancer_id, valid_from, valid_until")
       .eq("code", waiverCode.trim().toUpperCase())
       .eq("shift_date", new Date().toISOString().slice(0, 10))
       .maybeSingle();
     setValidating(false);
     if (error || !data) { setCodeError("Code not found"); return; }
-    if (data.used) { setCodeError("Code already used"); return; }
     if (data.dancer_id && data.dancer_id !== selected.dancer_id) {
       setCodeError("Code not valid for this dancer"); return;
+    }
+    if (data.valid_from && data.valid_until) {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const [fh, fm] = data.valid_from.slice(0, 5).split(":").map(Number);
+      const [uh, um] = data.valid_until.slice(0, 5).split(":").map(Number);
+      const fromMins = fh * 60 + fm;
+      const untilMins = uh * 60 + um;
+      const inWindow = fromMins <= untilMins
+        ? nowMins >= fromMins && nowMins <= untilMins
+        : nowMins >= fromMins || nowMins <= untilMins;
+      if (!inWindow) { setCodeError(`Code only valid ${data.valid_from.slice(0,5)}–${data.valid_until.slice(0,5)}`); return; }
     }
     setValidCode({ id: data.id, reason: data.reason });
   };
@@ -593,6 +745,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const [pinError, setPinError] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
   const [dancerLog, setDancerLog] = useState<DancerLogEntry[]>([]);
+  const [bannedInfo, setBannedInfo] = useState<{ name: string; reason: string | null; enrollId: string } | null>(null);
 
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -631,6 +784,23 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+
+      // ── Ban check ────────────────────────────────────────────────────────────
+      const { data: dancerRecord } = await (supabase as any)
+        .from("dancers")
+        .select("is_banned, ban_reason, enroll_id, stage_name")
+        .eq("id", dancerId)
+        .maybeSingle();
+      if (dancerRecord?.is_banned) {
+        setStep("idle");
+        setBannedInfo({
+          name:     dancerRecord.stage_name ?? stageName,
+          reason:   dancerRecord.ban_reason ?? null,
+          enrollId: dancerRecord.enroll_id ?? dancerId,
+        });
+        toast.error(`⛔ Entry blocked — ${dancerRecord.stage_name ?? stageName} is banned`);
+        return;
+      }
 
       await checkIn.mutateAsync({ dancerId, entranceFee, method, authorId: user.id });
       setResult({ name: stageName, fee: entranceFee });
@@ -758,6 +928,14 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
 
   return (
     <div className="space-y-4">
+      {bannedInfo && (
+        <BanBlockedModal
+          name={bannedInfo.name}
+          reason={bannedInfo.reason}
+          enrollId={bannedInfo.enrollId}
+          onClose={() => setBannedInfo(null)}
+        />
+      )}
       <div className="glass-card p-6">
 
         {/* IDLE */}

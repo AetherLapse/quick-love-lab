@@ -13,12 +13,14 @@ import {
   Mic2,
   Clock,
   BedDouble,
+  Tv2,
+  ScrollText,
 } from "lucide-react";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
 import { KioskLockScreen } from "@/components/KioskLockScreen";
 
-type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom";
+type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "backroom_tv" | "bartender" | "dj";
 
 interface NavItem {
   path: string;
@@ -47,6 +49,12 @@ const navItems: NavItem[] = [
     roles: ["admin", "owner", "manager", "house_mom", "room_attendant"],
   },
   {
+    path: "/backroom",
+    label: "Backroom TV",
+    icon: Tv2,
+    roles: ["backroom_tv", "bartender", "dj"],
+  },
+  {
     path: "/rooms",
     label: "Rooms",
     icon: BedDouble,
@@ -62,7 +70,13 @@ const navItems: NavItem[] = [
     path: "/reports",
     label: "Reports",
     icon: FileText,
-    roles: ["admin", "owner", "manager", "door_staff"],
+    roles: ["admin", "owner", "manager"],
+  },
+  {
+    path: "/logs",
+    label: "Logs",
+    icon: ScrollText,
+    roles: ["admin", "owner", "manager"],
   },
   {
     path: "/kiosks",
@@ -85,6 +99,9 @@ const ROLE_LABELS: Record<string, string> = {
   door_staff:     "Door / Security",
   room_attendant: "Room Attendant",
   house_mom:      "House Mom",
+  backroom_tv:    "Backroom TV",
+  bartender:      "Bartender",
+  dj:             "DJ",
 };
 
 import logo2nyt from "@/assets/logo-2nyt.png";

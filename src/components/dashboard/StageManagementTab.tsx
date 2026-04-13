@@ -1,59 +1,117 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import {
   Mic2, Play, Pause, SkipForward, RotateCcw, GripVertical,
   UserMinus, RefreshCw, Clock, BedDouble, ArrowUpFromLine, ArrowDownToLine,
+  DollarSign, AlertTriangle, X, Trash2,
 } from "lucide-react";
-import { useStage, useElapsed, type StageEntry } from "@/contexts/StageContext";
+import { useStage, useElapsed, useRoomGrace, type StageEntry } from "@/contexts/StageContext";
 import { useAttendanceLogs, useActiveRoomSessions, useActiveDancers, today } from "@/hooks/useDashboardData";
+import { toast } from "sonner";
 
-// ── Countdown ring ────────────────────────────────────────────────────────────
+// ── Audio beep ────────────────────────────────────────────────────────────────
+function playBeep(freq = 880, duration = 0.25, vol = 0.4) {
+  try {
+    const ctx  = new AudioContext();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(); osc.stop(ctx.currentTime + duration);
+  } catch { /* AudioContext blocked */ }
+}
 
+// ── Countdown ring ─────────────────────────────────────────────────────────────
 function CountdownRing({ seconds, total = 600, paused }: { seconds: number; total?: number; paused: boolean }) {
-  const r = 36;
+  const r    = 36;
   const circ = 2 * Math.PI * r;
-  const pct = seconds / total;
-  const dash = circ * pct;
-
+  const dash = circ * (seconds / total);
   const color = paused ? "#94a3b8" : seconds < 60 ? "#ef4444" : seconds < 180 ? "#f59e0b" : "hsl(328 78% 47%)";
-
-  const mins = Math.floor(seconds / 60);
-  const secs = String(seconds % 60).padStart(2, "0");
 
   return (
     <svg width="88" height="88" className="shrink-0">
-      {/* track */}
       <circle cx="44" cy="44" r={r} fill="none" stroke="#e2e8f0" strokeWidth="6" />
-      {/* progress */}
-      <circle
-        cx="44" cy="44" r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="6"
-        strokeDasharray={`${dash} ${circ}`}
-        strokeLinecap="round"
+      <circle cx="44" cy="44" r={r} fill="none" stroke={color} strokeWidth="6"
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
         transform="rotate(-90 44 44)"
-        style={{ transition: "stroke-dasharray 0.8s linear, stroke 0.4s" }}
-      />
-      <text x="44" y="40" textAnchor="middle" fontSize="14" fontWeight="bold" fill={color}>{mins}:{secs}</text>
-      <text x="44" y="55" textAnchor="middle" fontSize="9" fill="#94a3b8">{paused ? "PAUSED" : "NEXT"}</text>
+        style={{ transition: "stroke-dasharray 0.8s linear, stroke 0.4s" }} />
+      <text x="44" y="40" textAnchor="middle" fontSize="14" fontWeight="bold" fill={color}>
+        {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+      </text>
+      <text x="44" y="55" textAnchor="middle" fontSize="9" fill="#94a3b8">
+        {paused ? "PAUSED" : "NEXT"}
+      </text>
     </svg>
   );
 }
 
-// ── On-Stage card ─────────────────────────────────────────────────────────────
+// ── Fine popover ──────────────────────────────────────────────────────────────
+function FinePopover({ dancerId, dancerName, onClose }: { dancerId: string; dancerName: string; onClose: () => void }) {
+  const { issueFine } = useStage();
+  const [custom, setCustom] = useState("");
+  const PRESETS = [10, 25, 50, 100];
 
+  const issue = (amount: number, reason = "Stage violation") => {
+    issueFine(dancerId, dancerName, reason, amount);
+    toast.error(`$${amount} fine issued to ${dancerName}`);
+    onClose();
+  };
+
+  return (
+    <div className="absolute right-0 top-8 z-30 w-56 bg-white border border-border rounded-2xl shadow-xl p-3 space-y-2">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-bold text-foreground uppercase tracking-wider">Issue Fine — {dancerName}</p>
+        <button onClick={onClose} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground"><X className="w-3 h-3" /></button>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {PRESETS.map(a => (
+          <button key={a} onClick={() => issue(a)}
+            className="py-2 rounded-xl border-2 border-border text-sm font-bold hover:border-destructive/60 hover:bg-destructive/5 hover:text-destructive transition-all">
+            ${a}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          value={custom}
+          onChange={e => setCustom(e.target.value.replace(/\D/g, ""))}
+          placeholder="Custom $"
+          className="flex-1 border border-border rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-primary font-mono"
+        />
+        <button
+          onClick={() => custom && issue(Number(custom), "Custom fine")}
+          disabled={!custom}
+          className="px-3 py-2 rounded-xl bg-destructive text-white text-xs font-bold disabled:opacity-40 hover:opacity-90 transition-all"
+        >
+          Fine
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── On-Stage card ─────────────────────────────────────────────────────────────
 function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, onPause, onReset }:
   { entry: StageEntry; paused: boolean; secondsUntilNext: number; onAdvance: () => void; onOffStage: () => void; onPause: () => void; onReset: () => void }) {
   const elapsed = useElapsed(entry.startTime);
+
+  // Beep when < 60s remaining (once per transition)
+  const beeped = useRef(false);
+  useEffect(() => {
+    if (secondsUntilNext <= 60 && !paused && !beeped.current) {
+      playBeep(660, 0.3);
+      beeped.current = true;
+    }
+    if (secondsUntilNext > 60) beeped.current = false;
+  }, [secondsUntilNext, paused]);
+
   return (
     <div className="bg-white rounded-2xl border-2 border-green-400 p-5 shadow-sm">
       <div className="flex items-center gap-4">
-        {/* Avatar */}
         <div className="w-14 h-14 rounded-full bg-green-100 border-2 border-green-400 flex items-center justify-center shrink-0">
           <Mic2 className="w-6 h-6 text-green-600" />
         </div>
-
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">On Stage Now</p>
           <p className="text-lg font-bold text-foreground truncate">{entry.dancerName}</p>
@@ -65,38 +123,25 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, o
             )}
           </div>
         </div>
-
-        {/* Countdown ring */}
         <CountdownRing seconds={secondsUntilNext} paused={paused} />
       </div>
-
-      {/* Actions */}
       <div className="flex flex-wrap gap-2 mt-4">
-        <button
-          onClick={onPause}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all
-            ${paused ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
-        >
+        <button onClick={onPause}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${paused ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}>
           {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
           {paused ? "Resume" : "Pause"}
         </button>
-        <button
-          onClick={onReset}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:border-primary/50 transition-all"
-        >
+        <button onClick={onReset}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:border-primary/50 transition-all">
           <RotateCcw className="w-4 h-4" /> Reset Timer
         </button>
         <div className="flex-1" />
-        <button
-          onClick={onOffStage}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-destructive/50 text-destructive hover:bg-destructive/10 text-sm font-medium transition-all"
-        >
+        <button onClick={onOffStage}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-destructive/50 text-destructive hover:bg-destructive/10 text-sm font-medium transition-all">
           <ArrowDownToLine className="w-4 h-4" /> Off Stage
         </button>
-        <button
-          onClick={onAdvance}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-all"
-        >
+        <button onClick={onAdvance}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-all">
           <SkipForward className="w-4 h-4" /> Next Dancer
         </button>
       </div>
@@ -105,7 +150,6 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, o
 }
 
 // ── Empty stage card ──────────────────────────────────────────────────────────
-
 function EmptyStageCard({ onStart, queue, onPutOnStage }: {
   onStart: () => void;
   queue: StageEntry[];
@@ -118,10 +162,8 @@ function EmptyStageCard({ onStart, queue, onPutOnStage }: {
           <Mic2 className="w-5 h-5 opacity-40" />
           <span className="text-sm font-semibold">Stage is empty</span>
         </div>
-        <button
-          onClick={onStart}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-all"
-        >
+        <button onClick={onStart}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-all">
           <Play className="w-3.5 h-3.5" /> Auto-Start Rotation
         </button>
       </div>
@@ -129,11 +171,8 @@ function EmptyStageCard({ onStart, queue, onPutOnStage }: {
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Put on stage manually:</p>
           {queue.slice(0, 4).map(entry => (
-            <button
-              key={entry.dancerId}
-              onClick={() => onPutOnStage(entry.dancerId, entry.dancerName)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all text-left"
-            >
+            <button key={entry.dancerId} onClick={() => onPutOnStage(entry.dancerId, entry.dancerName)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all text-left">
               <ArrowUpFromLine className="w-4 h-4 text-primary shrink-0" />
               <span className="text-sm font-medium text-foreground">{entry.dancerName}</span>
               {entry.inRoom && <span className="ml-auto text-[10px] text-pink-500 bg-pink-50 px-2 py-0.5 rounded-full">IN ROOM</span>}
@@ -145,73 +184,103 @@ function EmptyStageCard({ onStart, queue, onPutOnStage }: {
   );
 }
 
-// ── Draggable queue row ───────────────────────────────────────────────────────
-
+// ── Queue row ─────────────────────────────────────────────────────────────────
 function QueueRow({
-  entry, index, onRemove, onDragStart, onDragOver, onDrop, dragging,
+  entry, index, onRemove, onFine, onDragStart, onDragOver, onDrop, dragging,
 }: {
-  entry: StageEntry;
-  index: number;
-  onRemove: () => void;
+  entry: StageEntry; index: number;
+  onRemove: () => void; onFine: () => void;
   onDragStart: (i: number) => void;
   onDragOver:  (i: number) => void;
   onDrop:      () => void;
   dragging:    number | null;
 }) {
-  const isDragging = dragging === index;
+  const isDragging   = dragging === index;
+  const [showFine, setShowFine] = useState(false);
+  const graceSeconds = useRoomGrace(entry.dancerId);
+  const isNextUp     = index === 0;
+  const isLate       = isNextUp && graceSeconds === null && entry.inRoom === false && !entry.inRoom;
 
   return (
-    <div
-      draggable
-      onDragStart={() => onDragStart(index)}
-      onDragOver={e => { e.preventDefault(); onDragOver(index); }}
-      onDrop={onDrop}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing select-none
-        ${isDragging ? "opacity-40 scale-95 border-primary" : "border-border bg-white hover:border-primary/40"}`}
-    >
-      {/* Position badge */}
-      <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
-        {index + 1}
-      </span>
+    <div className="relative">
+      <div
+        draggable
+        onDragStart={() => onDragStart(index)}
+        onDragOver={e => { e.preventDefault(); onDragOver(index); }}
+        onDrop={onDrop}
+        className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing select-none
+          ${isDragging ? "opacity-40 scale-95 border-primary" : "border-border bg-white hover:border-primary/40"}
+          ${isNextUp ? "border-primary/40 bg-primary/3" : ""}
+        `}
+      >
+        {/* Position badge */}
+        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+          ${isNextUp ? "bg-primary text-white" : "bg-secondary text-muted-foreground"}`}>
+          {index + 1}
+        </span>
 
-      {/* Grip */}
-      <GripVertical className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+        <GripVertical className="w-4 h-4 text-muted-foreground/40 shrink-0" />
 
-      {/* Name + status */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{entry.dancerName}</p>
-        {entry.inRoom && (
-          <div className="flex items-center gap-1 mt-0.5">
-            <BedDouble className="w-3 h-3 text-pink-500" />
-            <span className="text-[10px] text-pink-500 font-medium">In Room Session</span>
+        {/* Name + status */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{entry.dancerName}</p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            {entry.inRoom && (
+              <div className="flex items-center gap-1">
+                <BedDouble className="w-3 h-3 text-pink-500" />
+                <span className="text-[10px] text-pink-500 font-medium">In Room Session</span>
+              </div>
+            )}
+            {graceSeconds !== null && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${graceSeconds > 60 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700 animate-pulse"}`}>
+                ⏱ {Math.floor(graceSeconds / 60)}:{String(graceSeconds % 60).padStart(2, "0")} grace
+              </span>
+            )}
+            {isNextUp && graceSeconds === null && !entry.inRoom && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">UP NEXT</span>
+            )}
           </div>
-        )}
+        </div>
+
+        <span className="text-xs text-muted-foreground font-mono shrink-0">
+          ~{index + 1} set{index !== 0 ? "s" : ""} away
+        </span>
+
+        {/* Fine button */}
+        <button
+          onClick={() => setShowFine(s => !s)}
+          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+          title="Issue fine"
+        >
+          <DollarSign className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Remove */}
+        <button onClick={onRemove}
+          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+          title="Remove from queue">
+          <UserMinus className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Estimated slot */}
-      <span className="text-xs text-muted-foreground font-mono shrink-0">
-        ~{index + 1} set{index !== 0 ? "s" : ""} away
-      </span>
-
-      {/* Remove */}
-      <button
-        onClick={onRemove}
-        className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
-        title="Remove from queue"
-      >
-        <UserMinus className="w-3.5 h-3.5" />
-      </button>
+      {/* Fine popover */}
+      {showFine && (
+        <FinePopover
+          dancerId={entry.dancerId}
+          dancerName={entry.dancerName}
+          onClose={() => setShowFine(false)}
+        />
+      )}
     </div>
   );
 }
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
-
 export function StageManagementTab() {
   const {
-    current, queue, paused, secondsUntilNext,
+    current, queue, paused, secondsUntilNext, fines,
     advanceQueue, offStageEarly, removeFromQueue, reorderQueue,
-    setFullQueue, togglePause, resetTimer, putOnStage,
+    setFullQueue, togglePause, resetTimer, putOnStage, notifyRoomExit, clearFines,
   } = useStage();
 
   const todayStr = today();
@@ -219,12 +288,26 @@ export function StageManagementTab() {
   const { data: roomSessions  = [] } = useActiveRoomSessions();
   const { data: activeDancers = [] } = useActiveDancers();
 
-  // Derive inRoom status at render time (avoids setState loop)
-  const inRoomIds = new Set(roomSessions.map((s: any) => s.dancer_id as string));
-  const currentWithRoom = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;
-  const queueWithRoom   = queue.map(e => ({ ...e, inRoom: inRoomIds.has(e.dancerId) }));
+  // Track room exits — when a session disappears from active, notify grace period
+  const prevRoomIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+    prevRoomIdsRef.current.forEach(id => {
+      if (!currentIds.has(id)) {
+        // Dancer just left their room session
+        const isNextInQueue = queue[0]?.dancerId === id;
+        if (isNextInQueue) {
+          notifyRoomExit(id);
+        }
+      }
+    });
+    prevRoomIdsRef.current = currentIds;
+  }, [roomSessions, queue, notifyRoomExit]);
 
-  // ── Drag state ───────────────────────────────────────────────────────────
+  const inRoomIds         = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+  const currentWithRoom   = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;
+  const queueWithRoom     = queue.map(e => ({ ...e, inRoom: inRoomIds.has(e.dancerId) }));
+
   const dragFrom = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
@@ -234,20 +317,13 @@ export function StageManagementTab() {
     if (dragFrom.current !== null && dragOver !== null && dragFrom.current !== dragOver) {
       reorderQueue(dragFrom.current, dragOver);
     }
-    dragFrom.current = null;
-    setDragOver(null);
+    dragFrom.current = null; setDragOver(null);
   };
 
-  // ── Build / refresh queue ────────────────────────────────────────────────
-  // Primary source: attendance log sorted by clock_in (check-in order).
-  // Fallback: all active dancers alphabetically (when no one has formally clocked in).
-  const buildQueue = () => {
-    const inRoomIds = new Set(roomSessions.map((s: any) => s.dancer_id as string));
-
+  const buildQueue = useCallback(() => {
+    const inRoom = new Set(roomSessions.map((s: any) => s.dancer_id as string));
     let entries: StageEntry[];
-
     if (attendance.length > 0) {
-      // Use clock-in order
       entries = [...attendance]
         .sort((a, b) => new Date(a.clock_in).getTime() - new Date(b.clock_in).getTime())
         .filter(a => !current || a.dancer_id !== current.dancerId)
@@ -255,10 +331,9 @@ export function StageManagementTab() {
           dancerId:   a.dancer_id,
           dancerName: (a.dancers as any)?.stage_name ?? "Dancer",
           startTime:  new Date(),
-          inRoom:     inRoomIds.has(a.dancer_id),
+          inRoom:     inRoom.has(a.dancer_id),
         }));
     } else {
-      // Fallback: dancers with a live_status that means they're present tonight
       const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
       entries = activeDancers
         .filter(d => d.live_status && presentStatuses.has(d.live_status))
@@ -267,35 +342,40 @@ export function StageManagementTab() {
           dancerId:   d.id,
           dancerName: d.stage_name,
           startTime:  new Date(),
-          inRoom:     inRoomIds.has(d.id),
+          inRoom:     inRoom.has(d.id),
         }));
     }
-
-    // Just populate the queue — attendant manually picks who goes On Stage
     setFullQueue(entries);
-  };
+  }, [attendance, activeDancers, roomSessions, current, setFullQueue]);
 
-  const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
-  const checkedInCount = attendance.length || activeDancers.filter(d => d.live_status && presentStatuses.has(d.live_status)).length;
-  const inRoomCount = roomSessions.length;
+  const presentStatuses  = new Set(["available", "on_stage", "queued", "in_room"]);
+  const checkedInCount   = attendance.length || activeDancers.filter(d => d.live_status && presentStatuses.has(d.live_status)).length;
+  const inRoomCount      = roomSessions.length;
 
   return (
     <div className="space-y-5">
-      {/* ── Header bar ─────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-bold text-foreground">Stage Rotation</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             {checkedInCount} dancer{checkedInCount !== 1 ? "s" : ""} checked in
             {inRoomCount > 0 && ` · ${inRoomCount} in room`}
+            {fines.length > 0 && ` · ${fines.length} fine${fines.length !== 1 ? "s" : ""} issued`}
           </p>
         </div>
-        <button
-          onClick={buildQueue}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all shadow-sm"
+        <a
+          href="/backroom"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-secondary/60 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all shadow-sm"
         >
+          📺 Backroom TV
+        </a>
+        <button onClick={buildQueue}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-all shadow-sm">
           <RefreshCw className="w-4 h-4" />
-          {queueWithRoom.length === 0 && !currentWithRoom ? "Build Queue" : "Rebuild from Check-ins"}
+          {queueWithRoom.length === 0 && !currentWithRoom ? "Build Queue" : "Rebuild"}
         </button>
       </div>
 
@@ -311,11 +391,7 @@ export function StageManagementTab() {
           onReset={resetTimer}
         />
       ) : (
-        <EmptyStageCard
-          onStart={buildQueue}
-          queue={queueWithRoom}
-          onPutOnStage={putOnStage}
-        />
+        <EmptyStageCard onStart={buildQueue} queue={queueWithRoom} onPutOnStage={putOnStage} />
       )}
 
       {/* ── Queue ───────────────────────────────────────────────────────── */}
@@ -323,7 +399,7 @@ export function StageManagementTab() {
         <div className="bg-white rounded-2xl border border-border p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Up Next</h3>
-            <span className="text-xs text-muted-foreground">{queueWithRoom.length} in queue · drag to reorder</span>
+            <span className="text-xs text-muted-foreground">{queueWithRoom.length} in queue · drag to reorder · $ to fine</span>
           </div>
           <div className="space-y-2">
             {queueWithRoom.map((entry, i) => (
@@ -331,8 +407,8 @@ export function StageManagementTab() {
                 key={entry.dancerId}
                 entry={entry}
                 index={i}
-
                 onRemove={() => removeFromQueue(entry.dancerId)}
+                onFine={() => {}}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
@@ -341,28 +417,53 @@ export function StageManagementTab() {
             ))}
           </div>
         </div>
-      ) : (
-        currentWithRoom && (
-          <div className="bg-white rounded-2xl border border-dashed border-border p-6 text-center shadow-sm">
-            <p className="text-sm text-muted-foreground">Queue is empty — rebuild from check-ins or add dancers manually from Door Panel</p>
+      ) : currentWithRoom && (
+        <div className="bg-white rounded-2xl border border-dashed border-border p-6 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">Queue is empty — rebuild from check-ins</p>
+        </div>
+      )}
+
+      {/* ── Fines log ───────────────────────────────────────────────────── */}
+      {fines.length > 0 && (
+        <div className="bg-white rounded-2xl border border-destructive/30 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-destructive" />
+              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Fines Issued Tonight</h3>
+              <span className="px-2 py-0.5 rounded-full bg-destructive text-white text-[10px] font-bold">{fines.length}</span>
+            </div>
+            <button onClick={clearFines}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-all">
+              <Trash2 className="w-3 h-3" /> Clear
+            </button>
           </div>
-        )
+          <div className="space-y-1.5">
+            {fines.map(f => (
+              <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-destructive/5 border border-destructive/20">
+                <span className="text-sm font-bold text-destructive w-12 shrink-0">${f.amount}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{f.dancerName}</p>
+                  <p className="text-xs text-muted-foreground">{f.reason}</p>
+                </div>
+                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                  {f.issuedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-1 border-t border-destructive/20 mt-1">
+              <span className="text-xs text-muted-foreground font-semibold">Total</span>
+              <span className="text-sm font-bold text-destructive">${fines.reduce((s, f) => s + f.amount, 0)}</span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Legend ──────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-green-500" /> On Stage
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-pink-400" /> In Room Session
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Queue Paused
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-400" /> &lt;1 min remaining
-        </div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> On Stage</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-pink-400" /> In Room</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Grace Period</div>
+        <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-400" /> &lt;1 min remaining</div>
       </div>
     </div>
   );

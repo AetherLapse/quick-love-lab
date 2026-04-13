@@ -21,7 +21,7 @@ serve(async (req) => {
       });
     }
 
-    const validRoles = ["manager", "door_staff", "room_attendant", "house_mom"];
+    const validRoles = ["owner", "admin", "manager", "door_staff", "room_attendant", "house_mom", "bartender", "dj", "backroom_tv"];
     if (!validRoles.includes(role)) {
       return new Response(JSON.stringify({ error: "Invalid role" }), {
         status: 400,

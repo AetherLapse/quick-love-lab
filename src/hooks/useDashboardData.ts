@@ -772,6 +772,8 @@ export function useEarlyLeaveCodes() {
         dancer_id: string | null;
         used: boolean;
         used_at: string | null;
+        valid_from: string | null;
+        valid_until: string | null;
         created_at: string;
         dancers: { stage_name: string } | null;
       }>;
@@ -789,10 +791,14 @@ export function useGenerateEarlyLeaveCode() {
       reason,
       dancerId,
       generatedBy,
+      validFrom,
+      validUntil,
     }: {
       reason: string;
       dancerId?: string;
       generatedBy: string;
+      validFrom?: string;
+      validUntil?: string;
     }) => {
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       const bytes    = crypto.getRandomValues(new Uint8Array(8));
@@ -805,7 +811,9 @@ export function useGenerateEarlyLeaveCode() {
           reason,
           generated_by: generatedBy,
           shift_date:   today(),
-          ...(dancerId ? { dancer_id: dancerId } : {}),
+          ...(dancerId   ? { dancer_id:   dancerId }   : {}),
+          ...(validFrom  ? { valid_from:  validFrom }  : {}),
+          ...(validUntil ? { valid_until: validUntil } : {}),
         })
         .select()
         .single();
@@ -1220,5 +1228,87 @@ export function useUpdateGuest() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["guests"] }),
+  });
+}
+
+// ─── Read: dancer ban log ─────────────────────────────────────────────────────
+
+export function useDancerBanLog(dancerId: string) {
+  return useQuery({
+    queryKey: ["dancer_ban_log", dancerId],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("dancer_ban_log")
+        .select("id, action, reason, created_at, profiles:actioned_by(full_name)")
+        .eq("dancer_id", dancerId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        action: "banned" | "unbanned";
+        reason: string | null;
+        created_at: string;
+        profiles: { full_name: string } | null;
+      }>;
+    },
+    enabled: !!dancerId,
+  });
+}
+
+// ─── Write: ban / unban dancer ────────────────────────────────────────────────
+
+export function useBanDancer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dancerId,
+      reason,
+      actionedBy,
+    }: {
+      dancerId: string;
+      reason: string;
+      actionedBy: string;
+    }) => {
+      const { error } = await (supabase as any)
+        .from("dancers")
+        .update({ is_banned: true, ban_reason: reason, banned_at: new Date().toISOString(), banned_by: actionedBy })
+        .eq("id", dancerId);
+      if (error) throw error;
+      await (supabase as any).from("dancer_ban_log").insert({
+        dancer_id: dancerId, action: "banned", reason, actioned_by: actionedBy,
+      });
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["dancers"] });
+      qc.invalidateQueries({ queryKey: ["dancer_ban_log", v.dancerId] });
+    },
+  });
+}
+
+export function useUnbanDancer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dancerId,
+      reason,
+      actionedBy,
+    }: {
+      dancerId: string;
+      reason: string;
+      actionedBy: string;
+    }) => {
+      const { error } = await (supabase as any)
+        .from("dancers")
+        .update({ is_banned: false, ban_reason: null, banned_at: null, banned_by: null })
+        .eq("id", dancerId);
+      if (error) throw error;
+      await (supabase as any).from("dancer_ban_log").insert({
+        dancer_id: dancerId, action: "unbanned", reason, actioned_by: actionedBy,
+      });
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["dancers"] });
+      qc.invalidateQueries({ queryKey: ["dancer_ban_log", v.dancerId] });
+    },
   });
 }

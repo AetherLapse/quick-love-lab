@@ -8,9 +8,12 @@ import { toast } from "sonner";
 import {
   Plus, Edit, X, Camera, ShieldCheck, User, Loader2,
   AlertTriangle, CheckCircle2, ChevronRight, RefreshCw,
+  Ban, ShieldOff, Clock, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { Tables } from "@/integrations/supabase/types";
+import { useBanDancer, useUnbanDancer, useDancerBanLog } from "@/hooks/useDashboardData";
+import { useAuth } from "@/hooks/useAuth";
 
 type Dancer = Tables<"dancers">;
 
@@ -217,6 +220,145 @@ function FaceEnrollDrawer({
   );
 }
 
+// ─── Ban / Unban Modal ────────────────────────────────────────────────────────
+
+function BanDancerModal({
+  dancer,
+  onClose,
+  onDone,
+}: {
+  dancer: Dancer;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { user } = useAuth();
+  const isBanned = (dancer as Record<string, unknown>).is_banned as boolean;
+  const banDancer   = useBanDancer();
+  const unbanDancer = useUnbanDancer();
+  const { data: log = [], isLoading: logLoading } = useDancerBanLog(dancer.id);
+  const [reason, setReason] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!reason.trim() || !user) return;
+    try {
+      if (isBanned) {
+        await unbanDancer.mutateAsync({ dancerId: dancer.id, reason: reason.trim(), actionedBy: user.id });
+        toast.success(`${dancer.stage_name} ban lifted`);
+      } else {
+        await banDancer.mutateAsync({ dancerId: dancer.id, reason: reason.trim(), actionedBy: user.id });
+        toast.success(`${dancer.stage_name} banned`);
+      }
+      onDone();
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message ?? "Action failed");
+    }
+  };
+
+  const isPending = banDancer.isPending || unbanDancer.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className={`w-full max-w-sm rounded-3xl border-2 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        isBanned ? "bg-card border-green-500/50" : "bg-card border-red-500/50"
+      }`}>
+        {/* Header */}
+        <div className={`px-6 py-5 border-b ${isBanned ? "border-green-500/20 bg-green-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBanned ? "bg-green-500/20" : "bg-red-500/20"}`}>
+                {isBanned ? <ShieldOff className="w-5 h-5 text-green-400" /> : <Ban className="w-5 h-5 text-red-400" />}
+              </div>
+              <div>
+                <p className={`text-xs font-bold uppercase tracking-widest ${isBanned ? "text-green-500" : "text-red-500"}`}>
+                  {isBanned ? "Lift Ban" : "Issue Ban"}
+                </p>
+                <p className="text-foreground font-bold">{dancer.stage_name}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">ID: {dancer.enroll_id}</p>
+          {isBanned && (dancer as Record<string, unknown>).ban_reason && (
+            <div className="mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+              <p className="text-xs text-red-400 font-medium">Current ban reason:</p>
+              <p className="text-xs text-red-300 mt-0.5">{(dancer as Record<string, unknown>).ban_reason as string}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {isBanned ? "Reason for lifting ban" : "Ban reason"} <span className="text-destructive">*</span>
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder={isBanned ? "e.g. Reviewed and cleared" : "e.g. Fraudulent ID, repeated violations"}
+              rows={3}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none bg-background"
+            />
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={!reason.trim() || isPending}
+            className={`w-full py-3 rounded-2xl font-bold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
+              isBanned
+                ? "bg-green-500 hover:bg-green-400 text-white"
+                : "bg-red-500 hover:bg-red-400 text-white"
+            }`}
+          >
+            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : isBanned ? <ShieldOff className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+            {isBanned ? "Lift Ban" : "Ban Performer"}
+          </button>
+
+          {/* Ban history */}
+          {log.length > 0 && (
+            <div>
+              <button
+                onClick={() => setLogOpen(o => !o)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+              >
+                <Clock className="w-3 h-3" />
+                Ban history ({log.length})
+                {logOpen ? <ChevronUp className="w-3 h-3 ml-auto" /> : <ChevronDown className="w-3 h-3 ml-auto" />}
+              </button>
+              {logOpen && (
+                <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+                  {logLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto text-muted-foreground" />
+                  ) : log.map(entry => (
+                    <div key={entry.id} className={`px-3 py-2 rounded-xl text-xs border ${
+                      entry.action === "banned"
+                        ? "bg-red-500/5 border-red-500/20"
+                        : "bg-green-500/5 border-green-500/20"
+                    }`}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`font-semibold uppercase tracking-wider ${entry.action === "banned" ? "text-red-500" : "text-green-500"}`}>
+                          {entry.action === "banned" ? "Banned" : "Unbanned"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {new Date(entry.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "2-digit" })}
+                        </span>
+                      </div>
+                      {entry.reason && <p className="text-muted-foreground">{entry.reason}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dancer Profile Drawer ───────────────────────────────────────────────────
 
 function DancerProfileDrawer({
@@ -340,6 +482,7 @@ export default function DancerManagement() {
 
   const [enrollDancer, setEnrollDancer] = useState<Dancer | null>(null);
   const [profileDancer, setProfileDancer] = useState<Dancer | null>(null);
+  const [banDancer, setBanDancer]         = useState<Dancer | null>(null);
 
   const loadDancers = async () => {
     const { data } = await supabase.from("dancers").select("*").order("stage_name");
@@ -556,18 +699,26 @@ export default function DancerManagement() {
             {dancers.map((d) => (
               <div
                 key={d.id}
-                className={`glass-card p-4 flex items-center gap-4 ${!d.is_active ? "opacity-60" : ""}`}
+                className={`glass-card p-4 flex items-center gap-4 ${!d.is_active ? "opacity-60" : ""} ${(d as Record<string, unknown>).is_banned ? "border border-red-500/40 bg-red-500/5" : ""}`}
               >
                 {/* Avatar placeholder */}
-                <div className="w-11 h-11 rounded-full bg-secondary/60 flex items-center justify-center flex-shrink-0">
-                  <User className="w-5 h-5 text-muted-foreground" />
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${(d as Record<string, unknown>).is_banned ? "bg-red-500/20" : "bg-secondary/60"}`}>
+                  {(d as Record<string, unknown>).is_banned
+                    ? <Ban className="w-5 h-5 text-red-400" />
+                    : <User className="w-5 h-5 text-muted-foreground" />
+                  }
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-foreground truncate">{d.stage_name}</p>
-                    {d.facial_hash ? (
+                    {(d as Record<string, unknown>).is_banned && (
+                      <span className="flex items-center gap-1 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full font-bold">
+                        <Ban className="w-3 h-3" /> BANNED
+                      </span>
+                    )}
+                    {!((d as Record<string, unknown>).is_banned) && (d.facial_hash ? (
                       <span className="flex items-center gap-1 text-xs text-success bg-success/10 px-2 py-0.5 rounded-full">
                         <ShieldCheck className="w-3 h-3" /> Face
                       </span>
@@ -575,26 +726,33 @@ export default function DancerManagement() {
                       <span className="text-xs text-warning bg-warning/10 px-2 py-0.5 rounded-full">
                         No Face
                       </span>
-                    )}
+                    ))}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     ID: {d.enroll_id} · {d.payout_percentage}% · ${d.entrance_fee} fee
                   </p>
+                  {(d as Record<string, unknown>).is_banned && (d as Record<string, unknown>).ban_reason && (
+                    <p className="text-xs text-red-400/80 mt-0.5 truncate">
+                      Reason: {(d as Record<string, unknown>).ban_reason as string}
+                    </p>
+                  )}
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-1">
-                  <button
-                    title={d.facial_hash ? "Re-enroll face" : "Enroll face"}
-                    onClick={() => setEnrollDancer(d)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      d.facial_hash
-                        ? "text-success hover:bg-success/10"
-                        : "text-warning hover:bg-warning/10"
-                    }`}
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
+                  {!(d as Record<string, unknown>).is_banned && (
+                    <button
+                      title={d.facial_hash ? "Re-enroll face" : "Enroll face"}
+                      onClick={() => setEnrollDancer(d)}
+                      className={`p-2 rounded-lg transition-colors ${
+                        d.facial_hash
+                          ? "text-success hover:bg-success/10"
+                          : "text-warning hover:bg-warning/10"
+                      }`}
+                    >
+                      <Camera className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     title="Edit"
                     onClick={() => openEdit(d)}
@@ -612,6 +770,17 @@ export default function DancerManagement() {
                     }`}
                   >
                     {d.is_active ? "Off" : "On"}
+                  </button>
+                  <button
+                    title={(d as Record<string, unknown>).is_banned ? "Lift ban" : "Ban performer"}
+                    onClick={() => setBanDancer(d)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      (d as Record<string, unknown>).is_banned
+                        ? "text-green-500 hover:bg-green-500/10"
+                        : "text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                    }`}
+                  >
+                    {(d as Record<string, unknown>).is_banned ? <ShieldOff className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                   </button>
                   <button
                     title="View profile"
@@ -642,6 +811,15 @@ export default function DancerManagement() {
           dancer={profileDancer}
           onClose={() => setProfileDancer(null)}
           onEnroll={() => { setEnrollDancer(profileDancer); setProfileDancer(null); }}
+        />
+      )}
+
+      {/* Ban / Unban Modal */}
+      {banDancer && (
+        <BanDancerModal
+          dancer={banDancer}
+          onClose={() => setBanDancer(null)}
+          onDone={loadDancers}
         />
       )}
     </AppLayout>

@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { UserRound, ShieldCheck, LogIn, UserPlus } from "lucide-react";
+import { ShieldCheck, LogIn } from "lucide-react";
 import logo from "@/assets/logo-2nyt.png";
 
 const TAGLINES = [
@@ -27,34 +27,10 @@ export default function Landing() {
           "radial-gradient(ellipse 80% 60% at 50% -10%, hsl(328 78% 90% / 0.45) 0%, hsl(0 0% 100%) 70%)",
       }}
     >
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 items-center gap-8 md:gap-4">
+      <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 items-center gap-12 md:gap-16">
 
-        {/* ── LEFT: Dancers ── */}
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-2 mb-1">
-            <UserRound className="w-5 h-5 text-primary" />
-            <span className="text-base font-semibold text-foreground">Dancers</span>
-          </div>
-
-          <button
-            onClick={() => navigate("/dancer-login")}
-            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
-          >
-            <LogIn className="w-4 h-4" />
-            Login
-          </button>
-
-          <button
-            onClick={() => navigate("/dancer-register")}
-            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white text-sm font-medium transition-all hover:opacity-90 shadow-sm"
-          >
-            <UserPlus className="w-4 h-4" />
-            Create a Profile
-          </button>
-        </div>
-
-        {/* ── CENTER: Logo ── */}
-        <div className="flex flex-col items-center text-center order-first md:order-none">
+        {/* ── LEFT: Logo + Branding ── */}
+        <div className="flex flex-col items-center text-center">
           <img
             src={logo}
             alt="2NYT Entertainment"
@@ -73,28 +49,21 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* ── RIGHT: Associates ── */}
+        {/* ── RIGHT: Staff Login ── */}
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-2 mb-1">
-            <ShieldCheck className="w-5 h-5 text-primary" />
-            <span className="text-base font-semibold text-foreground">Staff</span>
+            <ShieldCheck className="w-7 h-7 text-primary" />
+            <span className="text-2xl font-bold text-foreground">Staff</span>
           </div>
 
           <button
             onClick={() => navigate("/login?role=staff")}
-            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-border bg-white hover:border-primary/60 text-foreground text-sm font-medium transition-all shadow-sm hover:shadow"
+            className="w-full max-w-[240px] flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary text-white text-lg font-bold transition-all hover:opacity-90 shadow-md hover:shadow-lg"
           >
-            <LogIn className="w-4 h-4" />
+            <LogIn className="w-5 h-5" />
             Login
           </button>
 
-          <button
-            onClick={() => navigate("/register")}
-            className="w-full max-w-[200px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white text-sm font-medium transition-all hover:opacity-90 shadow-sm"
-          >
-            <UserPlus className="w-4 h-4" />
-            Create Account
-          </button>
         </div>
 
       </div>

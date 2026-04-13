@@ -25,10 +25,11 @@ function formatTimer(ms: number) {
   return `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 function formatCountdown(secs: number) {
+  // Negative while time remains (-3:43 = 3m43s left), positive once in overtime
   const abs = Math.abs(secs);
   const m = String(Math.floor(abs / 60)).padStart(2, "0");
   const s = String(abs % 60).padStart(2, "0");
-  return secs < 0 ? `-${m}:${s}` : `${m}:${s}`;
+  return secs > 0 ? `-${m}:${s}` : `${m}:${s}`;
 }
 function getCountdownSecs(session: { entry_time?: string | null; duration_minutes?: number | null; extension_minutes?: number | null }, nowMs: number) {
   if (!session.entry_time || !session.duration_minutes) return null;
@@ -396,25 +397,27 @@ export default function PrivateRooms() {
                             <span className="font-bold text-foreground">${session.gross_amount}</span>
                           </div>
                           {remaining !== null ? (
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">{isOvertime ? "Overtime" : "Remaining"}</span>
-                              <span className={`font-mono font-bold text-base
-                                ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-600"}`}>
+                            <div className="flex justify-between items-center">
+                              <span className="text-muted-foreground">
+                                {isOvertime ? "Overtime" : "Remaining"}
+                              </span>
+                              <span className={`font-mono font-bold text-base ${
+                                isOvertime
+                                  ? "text-red-600 animate-pulse"
+                                  : isWarning
+                                    ? "text-orange-600"
+                                    : "text-green-600"
+                              }`}>
                                 {formatCountdown(remaining)}
                               </span>
                             </div>
                           ) : (
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Elapsed</span>
-                              <span className={`font-mono font-bold ${isOvertime ? "text-red-600" : "text-green-600"}`}>
+                              <span className={`font-mono font-bold ${isOvertime ? "text-red-600 animate-pulse" : "text-green-600"}`}>
                                 {formatTimer(elapsed)}
                               </span>
                             </div>
-                          )}
-                          {isOvertime && (
-                            <p className="text-xs text-red-600 flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5" /> Session overtime
-                            </p>
                           )}
                           <div className="flex justify-between pt-2 border-t border-border/50">
                             <span className="text-muted-foreground">Split</span>

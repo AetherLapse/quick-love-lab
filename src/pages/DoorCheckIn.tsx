@@ -397,10 +397,11 @@ function getRoomCountdownSecs(session: { entry_time?: string | null; duration_mi
 }
 
 function formatCountdown(secs: number) {
+  // Negative while time remains (-3:43 = 3m43s left), positive once in overtime
   const abs = Math.abs(secs);
   const m = String(Math.floor(abs / 60)).padStart(2, "0");
   const s = String(abs % 60).padStart(2, "0");
-  return secs < 0 ? `-${m}:${s}` : `${m}:${s}`;
+  return secs > 0 ? `-${m}:${s}` : `${m}:${s}`;
 }
 
 function ActiveRoomSessionsStrip({
@@ -911,18 +912,7 @@ export default function DoorCheckIn() {
             );
           })()}
 
-          {/* ── Card Scanner (collapsible) ────────────────────────────────── */}
-          <details className="bg-white rounded-2xl border border-border shadow-sm">
-            <summary className="px-5 py-3 text-sm font-semibold text-foreground cursor-pointer select-none list-none flex items-center justify-between">
-              <span>Card Scanner</span>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </summary>
-            <div className="px-5 pb-5 pt-1">
-              <CameraIDScanner onEntry={handleScanEntry} />
-            </div>
-          </details>
-
-          {/* ── Dancer Check-Out button ──────────────────────────────────── */}
+{/* ── Dancer Check-Out button ──────────────────────────────────── */}
           <button
             onClick={() => setCheckoutOpen(true)}
             className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 hover:bg-orange-100 transition-all group shadow-sm"

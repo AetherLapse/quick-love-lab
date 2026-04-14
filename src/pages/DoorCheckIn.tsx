@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import {
   FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward, LogOut,
-  DoorOpen, Users, TrendingUp, TrendingDown, BedDouble, Loader2,
+  DoorOpen, Users, BedDouble, Loader2,
 } from "lucide-react";
 import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { toast } from "sonner";
 import DancerCheckInTab from "@/components/door/DancerCheckInTab";
-import CameraIDScanner from "@/components/CameraIDScanner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useEntryTiers,
   useDanceTiers,
@@ -19,12 +19,17 @@ import {
   useExtendRoomSession,
   useActiveRoomSessions,
   useDoorStatusToday,
-  useClubSettings,
   useAttendanceLogs,
   useRoomSessions,
   today,
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
+
+// TODO: make configurable by Super Admin (mirrors PrivateRooms)
+const ROOM_LAYOUT = [
+  { floor: "Floor 1", rooms: ["Private Room"] },
+];
+function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
 
 // ─── Report Modals ────────────────────────────────────────────────────────────
 
@@ -409,16 +414,21 @@ function ActiveRoomSessionsStrip({
   dancers,
   danceTiers,
   onExtend,
+  onEnd,
 }: {
   sessions: any[];
   dancers: { id: string; stage_name: string }[];
   danceTiers: { id: string; name: string; price: number; duration_minutes: number | null }[];
   onExtend: (sessionId: string, packageName: string, amount: number, extraMinutes: number) => void;
+  onEnd: (sessionId: string) => void;
 }) {
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [nowMs, setNowMs]             = useState(Date.now());
   const [extendingId, setExtendingId] = useState<string | null>(null);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assigning,   setAssigning]   = useState(false);
   const beepedWarning  = useRef<Set<string>>(new Set());
   const beepedOvertime = useRef<Set<string>>(new Set());
+  const qc = useQueryClient();
 
   useEffect(() => {
     const iv = setInterval(() => setNowMs(Date.now()), 1000);
@@ -445,65 +455,162 @@ function ActiveRoomSessionsStrip({
   }, [nowMs, sessions]);
 
   const tiersWithDuration = danceTiers.filter(t => t.duration_minutes != null);
-  const active = sessions.filter(s => s.entry_time && s.room_name !== "Queue");
-  if (active.length === 0) return null;
+  const queued        = sessions.filter(s => s.room_name === "Queue");
+  const active        = sessions.filter(s => s.entry_time && s.room_name !== "Queue");
+  const isEmpty       = queued.length === 0 && active.length === 0;
+  const occupiedRooms = new Set(active.map(s => s.room_name));
+
+  const handleAssign = async (sessionId: string, floor: string, room: string) => {
+    setAssigning(true);
+    try {
+      const { error } = await supabase.from("room_sessions").update({
+        room_name:  buildRoomName(floor, room),
+        entry_time: new Date().toISOString(),
+      }).eq("id", sessionId);
+      if (error) throw error;
+      setAssigningId(null);
+      await qc.refetchQueries({ queryKey: ["room_sessions_active"] });
+      toast.success(`Assigned to ${buildRoomName(floor, room)}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to assign room");
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   return (
-    <div className="bg-white rounded-2xl border border-border p-4 shadow-sm space-y-2">
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active Room Sessions</h3>
-      {active.map(s => {
-        const dancer     = dancers.find(d => d.id === s.dancer_id);
-        const remaining  = s.duration_minutes ? getRoomCountdownSecs(s, nowMs) : null;
-        const isWarning  = remaining !== null && remaining <= 60 && remaining > 0;
-        const isOvertime = remaining !== null && remaining <= 0;
+    <div className="bg-white rounded-2xl border border-border p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Room Sessions</h3>
+        <span className="text-xs text-muted-foreground">{active.length} active · {queued.length} queued</span>
+      </div>
 
-        return (
-          <div key={s.id} className={`rounded-xl border-2 transition-all
-            ${isOvertime ? "border-red-400 bg-red-50/40" : isWarning ? "border-orange-400 bg-orange-50/40" : "border-green-300 bg-green-50/30"}`}>
-            <div className="flex items-center gap-3 px-3 py-2.5">
-              <div className={`w-2 h-2 rounded-full shrink-0 animate-pulse
-                ${isOvertime ? "bg-red-500" : isWarning ? "bg-orange-500" : "bg-green-500"}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{dancer?.stage_name ?? "—"}</p>
-                <p className="text-xs text-muted-foreground truncate font-mono">
-                  {s.package_log ?? s.package_name} · <span className="font-bold text-foreground">${s.gross_amount}</span>
-                </p>
+      {isEmpty && (
+        <div className="flex items-center justify-center gap-2 py-4 rounded-xl border border-dashed border-border text-muted-foreground text-sm">
+          <BedDouble className="w-4 h-4 opacity-40" />
+          <span>No active room sessions</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+
+        {/* ── Queued cards ── */}
+        {queued.map(s => {
+          const dancer = dancers.find(d => d.id === s.dancer_id);
+          const isOpen = assigningId === s.id;
+          return (
+            <div key={s.id} className="rounded-xl border-2 border-amber-400 bg-amber-50/40 flex flex-col overflow-hidden transition-all">
+              {/* Card header */}
+              <div className="px-3 pt-3 pb-2 flex-1 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Queued</span>
+                </div>
+                <p className="text-sm font-bold text-foreground leading-tight truncate">{dancer?.stage_name ?? "—"}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{s.package_name}</p>
+                <p className="text-xs font-bold text-foreground">${s.gross_amount}</p>
               </div>
-              {remaining !== null && (
-                <span className={`text-sm font-mono font-bold shrink-0
-                  ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-700"}`}>
-                  {isOvertime ? "OT " : ""}{formatCountdown(remaining)}
-                </span>
-              )}
+              {/* Assign button */}
               <button
-                onClick={() => setExtendingId(extendingId === s.id ? null : s.id)}
-                className={`shrink-0 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all
-                  ${extendingId === s.id ? "border-green-400 bg-green-50 text-green-700" : "border-border text-muted-foreground hover:border-green-400 hover:text-green-700"}`}>
-                {extendingId === s.id ? "Cancel" : "Extend"}
+                onClick={() => setAssigningId(isOpen ? null : s.id)}
+                className={`w-full py-2 text-xs font-semibold border-t transition-all
+                  ${isOpen ? "bg-amber-100 text-amber-700 border-amber-300" : "bg-amber-400/20 hover:bg-amber-400 hover:text-white text-amber-700 border-amber-300"}`}>
+                {isOpen ? "Cancel" : "Assign Room"}
               </button>
-            </div>
-
-            {/* Tier picker inline */}
-            {extendingId === s.id && (
-              <div className="px-3 pb-3 grid grid-cols-2 gap-1.5">
-                {tiersWithDuration.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => { onExtend(s.id, t.name, t.price, t.duration_minutes!); setExtendingId(null); }}
-                    className="flex items-center justify-between px-3 py-2 rounded-lg border border-border hover:border-green-400 hover:bg-green-50 transition-all text-left"
-                  >
-                    <div>
-                      <p className="text-xs font-semibold">{t.name}</p>
-                      <p className="text-[10px] text-muted-foreground">+{t.duration_minutes} min</p>
+              {/* Room picker */}
+              {isOpen && (
+                <div className="px-2 pb-2 pt-1 border-t border-amber-200 space-y-1">
+                  {ROOM_LAYOUT.map(({ floor, rooms }) => (
+                    <div key={floor}>
+                      <p className="text-[9px] text-amber-600/70 uppercase tracking-wider mb-1">{floor}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {rooms.map(room => {
+                          const key = buildRoomName(floor, room);
+                          const occupied = occupiedRooms.has(key);
+                          return (
+                            <button key={key} disabled={occupied || assigning}
+                              onClick={() => handleAssign(s.id, floor, room)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition-all
+                                ${occupied ? "border-border bg-secondary text-muted-foreground opacity-40 cursor-not-allowed"
+                                  : "border-amber-400 bg-white text-amber-700 hover:bg-amber-400 hover:text-white"}`}>
+                              {room}{occupied ? " ●" : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-green-700">+${t.price}</span>
-                  </button>
-                ))}
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* ── Active session cards ── */}
+        {active.map(s => {
+          const dancer     = dancers.find(d => d.id === s.dancer_id);
+          const remaining  = s.duration_minutes ? getRoomCountdownSecs(s, nowMs) : null;
+          const isWarning  = remaining !== null && remaining <= 60 && remaining > 0;
+          const isOvertime = remaining !== null && remaining <= 0;
+          const isExpanding = extendingId === s.id;
+
+          return (
+            <div key={s.id} className={`rounded-xl border-2 flex flex-col overflow-hidden transition-all
+              ${isOvertime ? "border-red-400 bg-red-50/40" : isWarning ? "border-orange-400 bg-orange-50/40" : "border-green-300 bg-green-50/30"}`}>
+              {/* Card body */}
+              <div className="px-3 pt-3 pb-2 flex-1 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full animate-pulse shrink-0
+                    ${isOvertime ? "bg-red-500" : isWarning ? "bg-orange-500" : "bg-green-500"}`} />
+                  <span className={`text-[10px] font-bold uppercase tracking-wider
+                    ${isOvertime ? "text-red-600" : isWarning ? "text-orange-600" : "text-green-700"}`}>
+                    {isOvertime ? "Overtime" : isWarning ? "Ending Soon" : "Active"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground leading-tight truncate">{dancer?.stage_name ?? "—"}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{s.room_name}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{s.package_name}</p>
+                {remaining !== null && (
+                  <p className={`text-base font-mono font-bold ${isOvertime ? "text-red-600 animate-pulse" : isWarning ? "text-orange-600" : "text-green-700"}`}>
+                    {isOvertime ? "+" : ""}{formatCountdown(remaining)}
+                  </p>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
+              {/* Action buttons */}
+              <div className="grid grid-cols-2 border-t">
+                <button
+                  onClick={() => setExtendingId(isExpanding ? null : s.id)}
+                  className={`py-3.5 text-sm font-semibold border-r transition-all
+                    ${isExpanding ? "bg-green-100 text-green-700" : "hover:bg-green-50 text-muted-foreground hover:text-green-700"}`}>
+                  {isExpanding ? "Cancel" : "Extend"}
+                </button>
+                <button
+                  onClick={() => onEnd(s.id)}
+                  className="py-3.5 text-sm font-semibold text-red-500 hover:bg-red-50 transition-all">
+                  End
+                </button>
+              </div>
+              {/* Extend tier picker */}
+              {isExpanding && (
+                <div className="px-2 pb-2 pt-1 border-t grid grid-cols-1 gap-1">
+                  {tiersWithDuration.map(t => (
+                    <button key={t.id}
+                      onClick={() => { onExtend(s.id, t.name, t.price, t.duration_minutes!); setExtendingId(null); }}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-lg border border-border hover:border-green-400 hover:bg-green-50 transition-all text-left">
+                      <div>
+                        <p className="text-[11px] font-semibold">{t.name}</p>
+                        <p className="text-[10px] text-muted-foreground">+{t.duration_minutes} min</p>
+                      </div>
+                      <span className="text-[11px] font-bold text-green-700">+${t.price}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+      </div>
     </div>
   );
 }
@@ -516,13 +623,26 @@ export default function DoorCheckIn() {
   const { data: entryTiers = [] }    = useEntryTiers();
   const { data: danceTiers = [] }    = useDanceTiers();
   const { data: activeDancers = [] } = usePresentDancersToday();
-  const { data: settings }           = useClubSettings();
   const { totalGuests, totalRevenue } = useDoorStatusToday();
-  const { scanAdd, manualAdd }        = useGuestCheckIn();
+  const { manualAdd }                 = useGuestCheckIn();
   const logDance  = useLogDanceSession();
   const logRoom   = useLogRoomSession();
   const extendRoom = useExtendRoomSession();
   const { data: activeRoomSessions = [] } = useActiveRoomSessions();
+  const pageQc = useQueryClient();
+
+  const handleEndSession = async (sessionId: string) => {
+    try {
+      const { error } = await supabase.from("room_sessions")
+        .update({ exit_time: new Date().toISOString() })
+        .eq("id", sessionId);
+      if (error) throw error;
+      await pageQc.refetchQueries({ queryKey: ["room_sessions_active"] });
+      toast.success("Session ended");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to end session");
+    }
+  };
   const { current: stageOccupied, queue: stageQueue, putOnStage, addToQueue, advanceQueue } = useStage();
 
   // ── Vendors (for distributor-tracked entry tiers) ─────────────────────────
@@ -637,29 +757,6 @@ export default function DoorCheckIn() {
   };
 
   // ── Scan entry ───────────────────────────────────────────────────────────
-  const handleScanEntry = useCallback(async (result: {
-    hash: string; denied: boolean; isReturning: boolean;
-    visitCount?: number; fullName?: string | null; address?: string | null;
-  }) => {
-    if (result.denied) { toast.error("Entry denied — underage"); return; }
-    const uid = await getCurrentUserId();
-    if (!uid) return;
-    const fee = Number(settings?.default_door_fee ?? 10);
-    try {
-      const data = await scanAdd.mutateAsync({
-        dlHash: result.hash,
-        displayId: result.hash.slice(0, 8).toUpperCase(),
-        doorFee: fee,
-        loggedBy: uid,
-        fullName: result.fullName ?? undefined,
-        address: result.address ?? undefined,
-      });
-      toast.success(data.isReturning ? `Welcome back! Visit #${data.visitCount}` : "New guest checked in");
-    } catch (e: any) {
-      toast.error(e.message ?? "Scan failed");
-    }
-  }, [scanAdd, settings]);
-
   // ── Toggle dancer selection ───────────────────────────────────────────────
   const toggleDancer = (id: string) => {
     setSelectedDancers(prev =>
@@ -733,7 +830,7 @@ export default function DoorCheckIn() {
       <div className="flex gap-2 mb-5">
         {(["door", "checkin"] as const).map(p => (
           <button key={p} onClick={() => setActivePanel(p)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all
+            className={`px-6 py-3 rounded-xl text-base font-semibold border-2 transition-all
               ${activePanel === p ? "border-primary bg-primary text-white" : "border-border bg-white text-muted-foreground hover:border-primary/50"}`}>
             {p === "door" ? "Door Entry" : "Dancer Check-In"}
           </button>
@@ -749,25 +846,38 @@ export default function DoorCheckIn() {
         />
       )}
 
+      {/* ── Active room sessions strip ─────────────────────────────────── */}
+      <div className="mb-5">
+        <ActiveRoomSessionsStrip
+          sessions={activeRoomSessions}
+          dancers={activeDancers}
+          danceTiers={danceTiers}
+          onExtend={(sessionId, packageName, amount, extraMinutes) =>
+            extendRoom.mutate({ sessionId, packageName, amount, extraMinutes })
+          }
+          onEnd={handleEndSession}
+        />
+      </div>
+
       {activePanel === "checkin" ? (
         <DancerCheckInTab onNewDancer={() => {}} />
       ) : (
         <div className="space-y-5">
           {/* ── Entry tier buttons ──────────────────────────────────────── */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
             {entryTiers.filter(t => t.is_active).map(tier => (
               <button
                 key={tier.id}
                 onClick={() => handleTierClick(tier as any)}
                 disabled={manualAdd.isPending}
-                className={`flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-xl border-2 transition-all disabled:opacity-50
+                className={`flex flex-col items-center justify-center gap-1.5 py-6 px-3 rounded-2xl border-2 transition-all disabled:opacity-50 active:scale-95
                   ${pendingTier?.id === tier.id
                     ? "border-primary bg-primary/10"
                     : "border-border bg-white hover:border-primary/60 hover:bg-primary/5"}`}
               >
-                <span className="text-sm font-semibold text-foreground">{tier.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {tier.price === 0 ? "Free" : (tier as any).admits_count > 1 ? `$${tier.price} / ${(tier as any).admits_count} people` : `$${tier.price}`}
+                <span className="text-base font-bold text-foreground leading-tight text-center">{tier.name}</span>
+                <span className="text-sm font-semibold text-muted-foreground">
+                  {tier.price === 0 ? "Free" : (tier as any).admits_count > 1 ? `$${tier.price} / ${(tier as any).admits_count}` : `$${tier.price}`}
                 </span>
               </button>
             ))}
@@ -796,14 +906,14 @@ export default function DoorCheckIn() {
                       <button
                         onClick={() => setPendingQuantity(q => Math.max(1, q - 1))}
                         disabled={pendingQuantity <= 1}
-                        className="w-10 h-10 rounded-xl border-2 border-border text-xl font-bold text-foreground hover:border-primary hover:text-primary disabled:opacity-30 transition-all active:scale-95"
+                        className="w-14 h-14 rounded-xl border-2 border-border text-2xl font-bold text-foreground hover:border-primary hover:text-primary disabled:opacity-30 transition-all active:scale-95"
                       >
                         −
                       </button>
-                      <span className="w-8 text-center text-2xl font-bold text-foreground tabular-nums">{pendingQuantity}</span>
+                      <span className="w-10 text-center text-3xl font-bold text-foreground tabular-nums">{pendingQuantity}</span>
                       <button
                         onClick={() => setPendingQuantity(q => q + 1)}
-                        className="w-10 h-10 rounded-xl border-2 border-border text-xl font-bold text-foreground hover:border-primary hover:text-primary transition-all active:scale-95"
+                        className="w-14 h-14 rounded-xl border-2 border-border text-2xl font-bold text-foreground hover:border-primary hover:text-primary transition-all active:scale-95"
                       >
                         +
                       </button>
@@ -889,7 +999,7 @@ export default function DoorCheckIn() {
                   <div className="flex gap-2 pt-1">
                     <button
                       onClick={() => setPendingTier(null)}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+                      className="px-5 py-4 rounded-xl border border-border text-base font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
                     >
                       Cancel
                     </button>
@@ -900,7 +1010,7 @@ export default function DoorCheckIn() {
                         (pendingTier.requires_distributor && manualVendorMode && !manualVendorName.trim()) ||
                         (pendingTier.requires_distributor && !manualVendorMode && !selectedVendorId)
                       }
-                      className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold disabled:opacity-40 transition-all flex items-center justify-center gap-2"
+                      className="flex-1 py-4 rounded-xl bg-green-600 hover:bg-green-700 text-white text-base font-bold disabled:opacity-40 transition-all flex items-center justify-center gap-2 active:scale-95"
                     >
                       {manualAdd.isPending
                         ? "Logging…"
@@ -915,18 +1025,18 @@ export default function DoorCheckIn() {
 {/* ── Dancer Check-Out button ──────────────────────────────────── */}
           <button
             onClick={() => setCheckoutOpen(true)}
-            className="w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 hover:bg-orange-100 transition-all group shadow-sm"
+            className="w-full flex items-center justify-between px-6 py-5 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:border-orange-400 hover:bg-orange-100 transition-all group shadow-sm active:scale-[0.99]"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center shrink-0 group-hover:bg-orange-600 transition-colors">
-                <LogOut className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center shrink-0 group-hover:bg-orange-600 transition-colors">
+                <LogOut className="w-6 h-6 text-white" />
               </div>
               <div className="text-left">
-                <p className="font-bold text-base text-orange-800">Dancer Check-Out</p>
-                <p className="text-xs text-orange-600">Requires dancer PIN or face scan</p>
+                <p className="font-bold text-lg text-orange-800">Dancer Check-Out</p>
+                <p className="text-sm text-orange-600">Requires dancer PIN or face scan</p>
               </div>
             </div>
-            <ChevronRight className="w-5 h-5 text-orange-400 group-hover:text-orange-600 transition-colors" />
+            <ChevronRight className="w-6 h-6 text-orange-400 group-hover:text-orange-600 transition-colors" />
           </button>
 
           {/* ── Dancer grid ──────────────────────────────────────────────── */}
@@ -955,7 +1065,7 @@ export default function DoorCheckIn() {
             {activeDancers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No dancers checked in yet</p>
             ) : viewMode === "grid" ? (
-              <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-7 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
                 {activeDancers.map(d => (
                   <DancerCard
                     key={d.id}
@@ -972,11 +1082,11 @@ export default function DoorCheckIn() {
                   const isSelected = selectedDancers.includes(d.id);
                   return (
                     <button key={d.id} onClick={() => toggleDancer(d.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm transition-all
+                      className={`w-full flex items-center gap-3 px-4 py-4 rounded-xl border text-base transition-all active:scale-[0.99]
                         ${isSelected ? "border-primary bg-primary/10 text-primary" : `border-border hover:border-primary/50 ${s.bg}`}`}>
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isSelected ? "bg-primary" : s.dot}`} />
+                      <span className={`w-3 h-3 rounded-full shrink-0 ${isSelected ? "bg-primary" : s.dot}`} />
                       <span className="flex-1 font-semibold text-left">{d.stage_name}</span>
-                      {s.label && <span className={`text-xs font-bold ${isSelected ? "text-primary" : s.labelColor}`}>{s.label}</span>}
+                      {s.label && <span className={`text-sm font-bold ${isSelected ? "text-primary" : s.labelColor}`}>{s.label}</span>}
                     </button>
                   );
                 })}
@@ -1007,13 +1117,13 @@ export default function DoorCheckIn() {
                     <button
                       key={tier.id}
                       onClick={() => setSelectedTier(tier)}
-                      className={`flex flex-col items-start gap-0.5 px-4 py-3 rounded-xl border transition-all text-left
+                      className={`flex flex-col items-start gap-1 px-4 py-5 rounded-xl border transition-all text-left active:scale-95
                         ${isActive
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border bg-secondary/30 hover:border-primary/60 hover:bg-primary/5"}`}
                     >
-                      <span className={`text-xs ${isActive ? "text-primary/80" : "text-muted-foreground"}`}>{tier.name}</span>
-                      <span className={`text-sm font-bold ${isActive ? "text-primary" : "text-foreground"}`}>
+                      <span className={`text-sm ${isActive ? "text-primary/80" : "text-muted-foreground"}`}>{tier.name}</span>
+                      <span className={`text-base font-bold ${isActive ? "text-primary" : "text-foreground"}`}>
                         {tier.price === 0 ? "Custom" : `$${tier.price}`}
                       </span>
                     </button>
@@ -1077,16 +1187,6 @@ export default function DoorCheckIn() {
               </div>
             </div>
           )}
-
-          {/* ── Active room sessions strip ──────────────────────────────── */}
-          <ActiveRoomSessionsStrip
-            sessions={activeRoomSessions}
-            dancers={activeDancers}
-            danceTiers={danceTiers}
-            onExtend={(sessionId, packageName, amount, extraMinutes) =>
-              extendRoom.mutate({ sessionId, packageName, amount, extraMinutes })
-            }
-          />
 
           {/* ── Report shortcuts ─────────────────────────────────────────── */}
           <div className="flex flex-wrap gap-2">

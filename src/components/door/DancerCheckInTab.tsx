@@ -863,7 +863,12 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       if (!res.ok) throw new Error(data?.error ?? data?.message ?? `HTTP ${res.status}`);
 
       if (data.matched) {
-        await performCheckIn(data.dancer_id, data.stage_name, applyLateFee(Number(data.entrance_fee)), "facial");
+        try {
+          await performCheckIn(data.dancer_id, data.stage_name, applyLateFee(Number(data.entrance_fee)), "facial");
+        } catch (e: any) {
+          toast.error(e?.message ?? "Check-in failed");
+          setStep("idle");
+        }
       } else {
         const reasonMessages: Record<string, string> = {
           no_face: "No face detected. Please look directly at the camera.",
@@ -892,9 +897,11 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       setPin("");
       setPinError(false);
       await performCheckIn(dancer.id, dancer.stage_name, applyLateFee(Number(dancer.entrance_fee)), "pin");
-    } catch {
-      setPinError(true);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Check-in failed");
+      setPinError(false);
       setPin("");
+      setStep("idle");
     }
   }, [pin, findByPin, performCheckIn]);
 

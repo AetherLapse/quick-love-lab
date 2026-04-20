@@ -2,10 +2,12 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   X, ArrowLeft, ScanFace, Hash, Loader2, AlertTriangle,
   Check, LogOut, DollarSign, Clock, Shield, ShieldOff, Delete,
-  Camera, TrendingUp, TrendingDown, Minus,
+  Camera, TrendingUp, TrendingDown, Minus, CreditCard, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
+import { PDF417_HINTS, parseAAMVA, sha256hex, maskDL } from "@/lib/dlScan";
 import { useAuth } from "@/hooks/useAuth";
 import { useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
 
@@ -540,14 +542,214 @@ function FaceScanStep({
   );
 }
 
+// ─── DL Scan checkout step ────────────────────────────────────────────────────
+
+function DLScanCheckoutStep({
+  selectedDancerId,
+  onIdentified,
+  onBack,
+}: {
+  selectedDancerId: string;
+  onIdentified: (dancerId: string, stageName: string) => void;
+  onBack: () => void;
+}) {
+  const videoRef    = useRef<HTMLVideoElement>(null);
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const streamRef   = useRef<MediaStream | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
+  const mountedRef  = useRef(true);
+
+  const [scanStep, setScanStep] = useState<"idle" | "camera" | "flash" | "processing" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; stopCamera(); };
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    try { controlsRef.current?.stop(); } catch { /* ignore */ }
+    controlsRef.current = null;
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  const processBarcode = useCallback(async (text: string) => {
+    if (!mountedRef.current) return;
+    setScanStep("processing");
+    setProgress(30); setProgressLabel("Parsing license…");
+
+    const { dlNumber } = parseAAMVA(text);
+    const identifier = dlNumber ?? text;
+
+    setProgress(60); setProgressLabel("Hashing identity…");
+    const hash = await sha256hex(identifier);
+
+    if (!mountedRef.current) return;
+    setProgress(85); setProgressLabel("Looking up dancer…");
+
+    const { data: dancer } = await (supabase as any)
+      .from("dancers")
+      .select("id, stage_name")
+      .eq("dl_hash", hash)
+      .maybeSingle();
+
+    if (!mountedRef.current) return;
+    setProgress(100);
+
+    if (!dancer) {
+      setErrorMsg("License not on file — use Face Scan or PIN instead");
+      setScanStep("error");
+      return;
+    }
+    if (dancer.id !== selectedDancerId) {
+      setErrorMsg(`License belongs to ${dancer.stage_name} — not the selected dancer`);
+      setScanStep("error");
+      return;
+    }
+    onIdentified(dancer.id, dancer.stage_name);
+  }, [selectedDancerId, onIdentified]);
+
+  const startCamera = useCallback(async () => {
+    setScanStep("camera");
+    setErrorMsg(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        const reader = new BrowserMultiFormatReader(PDF417_HINTS);
+        reader.decodeFromVideoElement(videoRef.current, (result, _err, controls) => {
+          if (!result) return;
+          if (!mountedRef.current) { controls.stop(); return; }
+          controls.stop(); controlsRef.current = null;
+          streamRef.current?.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+          setScanStep("flash");
+          const barcodeText = result.getText();
+          setTimeout(() => { if (mountedRef.current) processBarcode(barcodeText); }, 300);
+        }).then(ctrl => { controlsRef.current = ctrl; }).catch(() => {});
+      }
+    } catch {
+      setErrorMsg("Camera access denied");
+      setScanStep("error");
+    }
+  }, [processBarcode]);
+
+  const captureManually = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    canvas.width  = videoRef.current.videoWidth  || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
+    stopCamera();
+    setScanStep("flash");
+    setTimeout(async () => {
+      try {
+        const reader = new BrowserMultiFormatReader(PDF417_HINTS);
+        const decoded = await reader.decodeFromImageUrl(canvas.toDataURL("image/jpeg", 0.9));
+        processBarcode(decoded.getText());
+      } catch {
+        if (mountedRef.current) {
+          setErrorMsg("No barcode detected — hold the ID steady and try again");
+          setScanStep("error");
+        }
+      }
+    }, 300);
+  }, [stopCamera, processBarcode]);
+
+  if (scanStep === "idle") return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-primary/8 border border-primary/20 text-sm text-primary">
+        <CreditCard className="w-5 h-5 shrink-0" />
+        <div>
+          <p className="font-semibold">Driver's License Scan</p>
+          <p className="text-xs text-primary/70 mt-0.5">Scan the <strong>back</strong> of the dancer's ID (PDF417 barcode)</p>
+        </div>
+      </div>
+      <button onClick={startCamera}
+        className="w-full py-3 rounded-xl bg-primary text-white font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-all">
+        <Camera className="w-5 h-5" /> Start ID Scan
+      </button>
+      <button onClick={onBack} className="w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
+    </div>
+  );
+
+  if (scanStep === "camera") return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground text-center">Point rear camera at the <strong>back of the ID</strong> — auto-detects barcode</p>
+      <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-border">
+        <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+        <canvas ref={canvasRef} className="hidden" />
+        {(["tl","tr","bl","br"] as const).map(c => (
+          <div key={c} className={`absolute w-8 h-8 ${
+            c === "tl" ? "top-2 left-2 border-t-2 border-l-2" :
+            c === "tr" ? "top-2 right-2 border-t-2 border-r-2" :
+            c === "bl" ? "bottom-2 left-2 border-b-2 border-l-2" :
+                         "bottom-2 right-2 border-b-2 border-r-2"
+          } border-primary`} />
+        ))}
+        <div className="absolute left-4 right-4 h-0.5 bg-primary shadow-[0_0_8px_hsl(var(--primary))] animate-scan-line" />
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-3 pt-8">
+          <p className="text-white/80 text-xs text-center">Align barcode within frame — hold steady</p>
+        </div>
+        <button onClick={() => { stopCamera(); setScanStep("idle"); }}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <button onClick={captureManually}
+        className="w-full py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 flex items-center justify-center gap-2 transition-all">
+        <Camera className="w-4 h-4" /> Capture Manually
+      </button>
+    </div>
+  );
+
+  if (scanStep === "flash") return (
+    <div className="w-full aspect-video rounded-xl bg-white animate-[flashOut_0.3s_ease-out_forwards]" />
+  );
+
+  if (scanStep === "processing") return (
+    <div className="space-y-4 py-6 text-center">
+      <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+      <p className="text-sm text-muted-foreground">{progressLabel}</p>
+      <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+        <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+  );
+
+  if (scanStep === "error") return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 px-4 py-3.5 bg-destructive/10 border border-destructive/20 rounded-xl">
+        <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+        <p className="text-sm text-destructive font-medium">{errorMsg}</p>
+      </div>
+      <button onClick={startCamera}
+        className="w-full py-3 rounded-xl bg-primary text-white font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-all">
+        <RefreshCw className="w-4 h-4" /> Try Again
+      </button>
+      <button onClick={onBack} className="w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
+    </div>
+  );
+
+  return null;
+}
+
 // ─── Main checkout flow ───────────────────────────────────────────────────────
 
 type Step =
   | "select"        // pick dancer from checked-in list
-  | "method"        // Face Scan vs PIN
+  | "method"        // Face Scan / PIN / DL Scan
   | "staff_pin"     // bouncer enters their PIN
   | "dancer_pin"    // dancer enters their PIN
-  | "face_scan"     // camera scan
+  | "face_scan"     // camera face scan
+  | "dl_scan"       // driver's license barcode scan
   | "summary";      // show data + confirm checkout
 
 interface CheckOutFlowProps {
@@ -654,11 +856,12 @@ export function DancerCheckOutFlow({ onClose }: CheckOutFlowProps) {
   };
 
   const goBack = () => {
-    if (step === "method")     { setStep("select"); setSelectedDancer(null); }
-    else if (step === "staff_pin") { setStep("method"); setStaffPin(""); setStaffError(null); }
+    if (step === "method")      { setStep("select"); setSelectedDancer(null); }
+    else if (step === "staff_pin")  { setStep("method"); setStaffPin(""); setStaffError(null); }
     else if (step === "dancer_pin") { setStep("staff_pin"); setDancerPin(""); setDancerError(null); }
-    else if (step === "face_scan") { setStep("method"); }
-    else if (step === "summary") { setStep("method"); setSummary(null); }
+    else if (step === "face_scan")  { setStep("method"); }
+    else if (step === "dl_scan")    { setStep("method"); }
+    else if (step === "summary")    { setStep("method"); setSummary(null); }
     else onClose();
   };
 
@@ -761,6 +964,19 @@ export function DancerCheckOutFlow({ onClose }: CheckOutFlowProps) {
                     <p className="text-xs text-muted-foreground">Bouncer PIN first, then dancer PIN</p>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => setStep("dl_scan")}
+                  className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center group-hover:bg-secondary/80 transition-colors">
+                    <CreditCard className="w-6 h-6 text-muted-foreground group-hover:text-foreground" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold text-sm text-foreground">DL Scan</p>
+                    <p className="text-xs text-muted-foreground">Scan back of driver's license</p>
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -794,6 +1010,15 @@ export function DancerCheckOutFlow({ onClose }: CheckOutFlowProps) {
           {/* ── Face scan ──────────────────────────────────────────────────── */}
           {step === "face_scan" && (
             <FaceScanStep
+              onIdentified={handleFaceIdentified}
+              onBack={() => setStep("method")}
+            />
+          )}
+
+          {/* ── DL Scan ────────────────────────────────────────────────────── */}
+          {step === "dl_scan" && selectedDancer && (
+            <DLScanCheckoutStep
+              selectedDancerId={selectedDancer.dancer_id}
               onIdentified={handleFaceIdentified}
               onBack={() => setStep("method")}
             />

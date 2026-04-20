@@ -64,7 +64,7 @@ function formatTimeAgo(iso: string) {
 
 type Session = Awaited<ReturnType<typeof useActiveRoomSessions>>["data"][number];
 
-export default function PrivateRooms() {
+export function RoomsPanel() {
   const [now, setNow] = useState(Date.now());
 
   // ── New session modal ────────────────────────────────────────────────────────
@@ -300,8 +300,7 @@ export default function PrivateRooms() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <AppLayout>
-      <div className="p-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -509,8 +508,6 @@ export default function PrivateRooms() {
             </div>
           </div>
         )}
-      </div>
-
       {/* ── Extend Session Modal ── */}
       {extendSession && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -809,6 +806,16 @@ export default function PrivateRooms() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export default function PrivateRooms() {
+  return (
+    <AppLayout>
+      <div className="p-6 max-w-7xl mx-auto">
+        <RoomsPanel />
+      </div>
     </AppLayout>
   );
 }

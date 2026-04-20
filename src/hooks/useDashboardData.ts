@@ -719,6 +719,16 @@ export function useDancerCheckIn() {
       method: "pin" | "facial";
       authorId: string;
     }) => {
+      // Reject if dancer already has an open shift today
+      const { data: existing } = await supabase
+        .from("attendance_log")
+        .select("id")
+        .eq("dancer_id", dancerId)
+        .eq("shift_date", today())
+        .is("clock_out", null)
+        .maybeSingle();
+      if (existing) throw new Error("Dancer is already checked in and has not checked out.");
+
       // Insert attendance log — select id so caller can record payment immediately
       const { data: attRow, error: attErr } = await supabase
         .from("attendance_log")

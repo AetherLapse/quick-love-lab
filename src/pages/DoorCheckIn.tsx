@@ -8,6 +8,7 @@ import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { toast } from "sonner";
 import DancerCheckInTab from "@/components/door/DancerCheckInTab";
+import { RoomsPanel } from "@/pages/PrivateRooms";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useEntryTiers,
@@ -859,7 +860,7 @@ export default function DoorCheckIn() {
   const [manualVendorName, setManualVendorName] = useState("");
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [activePanel, setActivePanel] = useState<"door" | "checkin">("door");
+  const [activePanel, setActivePanel] = useState<"door" | "checkin" | "rooms">("door");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
@@ -1025,13 +1026,13 @@ export default function DoorCheckIn() {
         </div>
       </div>
 
-      {/* ── Panel toggle (Door / Dancer Check-In) ────────────────────────── */}
+      {/* ── Panel toggle (Door / Dancer Check-In / Rooms) ───────────────── */}
       <div className="flex gap-3 mb-6">
-        {(["door", "checkin"] as const).map(p => (
+        {(["door", "checkin", "rooms"] as const).map(p => (
           <button key={p} onClick={() => setActivePanel(p)}
             className={`flex-1 py-4 rounded-2xl text-lg font-bold border-2 transition-all active:scale-95
               ${activePanel === p ? "border-primary bg-primary text-white shadow-md" : "border-border bg-white text-muted-foreground hover:border-primary/50"}`}>
-            {p === "door" ? "Door Entry" : "Dancer Check-In"}
+            {p === "door" ? "Door Entry" : p === "checkin" ? "Dancer Check-In" : "Rooms"}
           </button>
         ))}
       </div>
@@ -1065,6 +1066,8 @@ export default function DoorCheckIn() {
 
       {activePanel === "checkin" ? (
         <DancerCheckInTab onNewDancer={() => {}} />
+      ) : activePanel === "rooms" ? (
+        <RoomsPanel />
       ) : (
         <div className="space-y-5">
           {/* ── Entry tier buttons ──────────────────────────────────────── */}

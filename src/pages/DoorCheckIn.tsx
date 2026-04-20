@@ -717,12 +717,10 @@ function DancerBalancesPanel() {
 
                 {/* Fee breakdown — music fee covered first, then house fee */}
                 {(() => {
-                  // Room earnings reduce what's owed on house fee
-                  const effectiveHouseFee = Math.max(0, b.houseFee + b.fines - b.roomCut);
                   const musicPaid = Math.min(b.amountPaid, b.musicFee);
                   const housePaid = Math.max(0, b.amountPaid - b.musicFee);
                   const musicDone = musicPaid >= b.musicFee;
-                  const houseDone = housePaid >= effectiveHouseFee;
+                  const houseDone = housePaid >= b.houseFee;
                   return (
                     <div className="space-y-1 px-1">
                       {/* Music Fee row */}
@@ -749,7 +747,7 @@ function DancerBalancesPanel() {
                           {houseDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
                         </div>
                         <span className={`font-medium ${houseDone ? "line-through text-green-500" : "text-foreground"}`}>
-                          {fmtCur(effectiveHouseFee)}
+                          {fmtCur(b.houseFee)}
                           {housePaid > 0 && !houseDone && (
                             <span className="text-blue-500 ml-1">(−{fmtCur(housePaid)})</span>
                           )}

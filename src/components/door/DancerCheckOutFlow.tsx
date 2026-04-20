@@ -267,11 +267,10 @@ function CheckoutSummary({
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">House Fee Payment</p>
               {/* Per-fee allocation: music first, then house */}
               {(() => {
-                const effectiveHouseFee = Math.max(0, houseFee - Number(summary.tonightEarnings ?? 0));
                 const musicPaid = Math.min(amountPaid, musicFee);
                 const housePaid = Math.max(0, amountPaid - musicFee);
                 const musicDone = musicPaid >= musicFee;
-                const houseDone = housePaid >= effectiveHouseFee;
+                const houseDone = housePaid >= houseFee;
                 return (
                   <div className="space-y-1.5">
                     {/* Music Fee */}
@@ -301,7 +300,7 @@ function CheckoutSummary({
                         )}
                       </div>
                       <span className={`font-bold ${houseDone ? "line-through text-green-500" : "text-foreground"}`}>
-                        {fmt(effectiveHouseFee)}
+                        {fmt(houseFee)}
                       </span>
                     </div>
 

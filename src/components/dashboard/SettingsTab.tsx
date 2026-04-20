@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Home, Users, User, Lock, Loader2, Plus, Camera,
   ShieldCheck, ChevronRight, X, Edit, AlertTriangle, CheckCircle2,
-  RefreshCw, Eye, EyeOff, Trash2,
+  RefreshCw, Eye, EyeOff, Trash2, Mail, Send, ToggleLeft, ToggleRight,
 } from "lucide-react";
 import { PanelStack } from "./DraggablePanels";
 import { toast } from "sonner";
@@ -429,6 +429,61 @@ export function SettingsTab() {
   const { data: dancers, isLoading: dancersLoading, refetch: refetchDancers } = useDancers();
   const { data: settings, isLoading: settingsLoading } = useClubSettings();
 
+  // Report email state
+  const [reportEmail,          setReportEmail]          = useState("");
+  const [dailyEnabled,         setDailyEnabled]          = useState(true);
+  const [weeklyEnabled,        setWeeklyEnabled]         = useState(true);
+  const [reportEmailSaving,    setReportEmailSaving]     = useState(false);
+  const [reportTestSending,    setReportTestSending]     = useState(false);
+  const [reportEmailLoaded,    setReportEmailLoaded]     = useState(false);
+
+  // Sync from settings once loaded
+  useEffect(() => {
+    if (settings && !reportEmailLoaded) {
+      setReportEmail((settings as any).report_email ?? "");
+      setDailyEnabled((settings as any).daily_report_enabled ?? true);
+      setWeeklyEnabled((settings as any).weekly_report_enabled ?? true);
+      setReportEmailLoaded(true);
+    }
+  }, [settings, reportEmailLoaded]);
+
+  const saveReportSettings = async () => {
+    setReportEmailSaving(true);
+    try {
+      const { error } = await supabase.from("club_settings").update({
+        report_email:            reportEmail.trim() || null,
+        daily_report_enabled:   dailyEnabled,
+        weekly_report_enabled:  weeklyEnabled,
+      } as any).eq("id", (settings as any).id);
+      if (error) throw error;
+      toast.success("Report settings saved");
+    } catch (e: any) {
+      toast.error(e.message ?? "Save failed");
+    } finally {
+      setReportEmailSaving(false);
+    }
+  };
+
+  const sendTestReport = async (type: "daily" | "weekly") => {
+    if (!reportEmail.trim()) { toast.error("Enter a report email first"); return; }
+    setReportTestSending(true);
+    try {
+      const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-nightly-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${ANON_KEY}` },
+        body: JSON.stringify({ type, to_email: reportEmail.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      toast.success(`${type === "daily" ? "Daily" : "Weekly"} test report sent to ${reportEmail}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to send test report");
+    } finally {
+      setReportTestSending(false);
+    }
+  };
+
   // Dancer dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -790,6 +845,103 @@ export function SettingsTab() {
               >
                 <Plus className="w-4 h-4" /> Add Performer
               </button>
+            </div>
+          ),
+        },
+        {
+          id: "reports", label: "Report Email",
+          node: (
+            <div className="glass-card p-6 space-y-5">
+              <h3 className="font-heading text-xl tracking-wide flex items-center gap-2">
+                <Mail className="w-5 h-5 text-primary" /> Nightly Reports
+              </h3>
+
+              {/* Email input */}
+              <div>
+                <Label className="text-sm text-muted-foreground">Recipient Email</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    type="email"
+                    value={reportEmail}
+                    onChange={(e) => setReportEmail(e.target.value)}
+                    placeholder="owner@example.com"
+                    className="bg-secondary flex-1"
+                  />
+                  <button
+                    onClick={saveReportSettings}
+                    disabled={reportEmailSaving}
+                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    {reportEmailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Save
+                  </button>
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="space-y-3">
+                <button
+                  onClick={() => { setDailyEnabled(!dailyEnabled); }}
+                  className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium">Daily Report</p>
+                    <p className="text-xs text-muted-foreground">Sent every night at 3 AM UTC</p>
+                  </div>
+                  {dailyEnabled
+                    ? <ToggleRight className="w-6 h-6 text-primary" />
+                    : <ToggleLeft className="w-6 h-6 text-muted-foreground" />}
+                </button>
+
+                <button
+                  onClick={() => { setWeeklyEnabled(!weeklyEnabled); }}
+                  className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium">Weekly Report</p>
+                    <p className="text-xs text-muted-foreground">Sent every Sunday at 3:30 AM UTC</p>
+                  </div>
+                  {weeklyEnabled
+                    ? <ToggleRight className="w-6 h-6 text-primary" />
+                    : <ToggleLeft className="w-6 h-6 text-muted-foreground" />}
+                </button>
+              </div>
+
+              {/* Save toggles */}
+              <button
+                onClick={saveReportSettings}
+                disabled={reportEmailSaving}
+                className="w-full py-2.5 rounded-lg bg-secondary border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {reportEmailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save Report Settings
+              </button>
+
+              {/* Test sends */}
+              <div className="border-t border-border/30 pt-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Send Test Report</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => sendTestReport("daily")}
+                    disabled={reportTestSending || !reportEmail}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-border text-sm hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-40"
+                  >
+                    {reportTestSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Daily
+                  </button>
+                  <button
+                    onClick={() => sendTestReport("weekly")}
+                    disabled={reportTestSending || !reportEmail}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-border text-sm hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-40"
+                  >
+                    {reportTestSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Weekly
+                  </button>
+                </div>
+                {!reportEmail && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">Enter an email above to enable test sends</p>
+                )}
+              </div>
             </div>
           ),
         },

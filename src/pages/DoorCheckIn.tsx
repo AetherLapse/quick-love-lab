@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import {
   FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward, LogOut,
-  DoorOpen, Users, BedDouble, Loader2,
+  DoorOpen, Users, BedDouble, Loader2, DollarSign, Check,
 } from "lucide-react";
 import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage, useElapsed } from "@/contexts/StageContext";
@@ -21,6 +21,8 @@ import {
   useDoorStatusToday,
   useAttendanceLogs,
   useRoomSessions,
+  useDancerBalancesToday,
+  useMarkDancerPayment,
   today,
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
@@ -615,6 +617,205 @@ function ActiveRoomSessionsStrip({
   );
 }
 
+// ─── Dancer Balances Panel ───────────────────────────────────────────────────
+
+const PAYMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  unpaid:        { label: "Unpaid",          color: "bg-amber-100 text-amber-700" },
+  paid_checkin:  { label: "Paid at Check-In", color: "bg-green-100 text-green-700" },
+  paid_during:   { label: "Paid During Shift", color: "bg-green-100 text-green-700" },
+  paid_checkout: { label: "Paid at Check-Out", color: "bg-green-100 text-green-700" },
+  ran_off:       { label: "Ran Off",           color: "bg-red-100 text-red-700" },
+};
+
+function DancerBalancesPanel() {
+  const { data: balances = [] } = useDancerBalancesToday();
+  const markPayment = useMarkDancerPayment();
+
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [payInput, setPayInput] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  const fmtCur = (n: number) => `$${Number(n).toFixed(2)}`;
+
+  const handleRecordPayment = async (attendanceId: string) => {
+    const amount = parseFloat(payInput);
+    if (isNaN(amount) || amount < 0) { toast.error("Enter a valid amount"); return; }
+    const current   = balances.find(b => b.attendanceId === attendanceId);
+    const newTotal  = (current?.amountPaid ?? 0) + amount;
+    const totalDue  = current?.totalDue ?? 0;
+    const newStatus = newTotal >= totalDue ? "paid_during" : "unpaid";
+    try {
+      await markPayment.mutateAsync({ attendanceId, amountPaid: newTotal, status: newStatus as any });
+      toast.success(`Payment of ${fmtCur(amount)} recorded`);
+      setPayingId(null);
+      setPayInput("");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to record payment");
+    }
+  };
+
+  const totalOwed = balances.reduce((s, b) => s + b.stillOwed, 0);
+  const anyOwed   = totalOwed > 0;
+
+  return (
+    <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+      {/* Header — always visible, tap to expand/collapse */}
+      <button
+        className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-secondary/30 transition-colors"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-primary shrink-0" />
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dancer Balances</h3>
+          <span className="text-xs text-muted-foreground">· {balances.length} active</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {anyOwed && (
+            <span className="text-sm font-bold text-red-500">{fmtCur(totalOwed)} owed</span>
+          )}
+          {!anyOwed && balances.length > 0 && (
+            <span className="text-sm font-bold text-green-600">All settled</span>
+          )}
+          <span className="text-muted-foreground text-xs">{expanded ? "▲" : "▼"}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border divide-y divide-border/50">
+          {balances.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-5">No dancers checked in</p>
+          )}
+
+          {balances.map(b => {
+            const isPaying    = payingId === b.attendanceId;
+            const isSettled   = b.stillOwed <= 0;
+
+            return (
+              <div key={b.attendanceId} className="px-4 py-3 space-y-2">
+                {/* Dancer name row */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                      {b.stageName.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="font-semibold text-foreground truncate">{b.stageName}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {(() => {
+                      const ps = PAYMENT_STATUS_LABELS[b.paymentStatus] ?? PAYMENT_STATUS_LABELS.unpaid;
+                      return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ps.color}`}>{ps.label}</span>;
+                    })()}
+                    {isSettled ? (
+                      <span className="flex items-center gap-1 text-green-600 text-sm font-semibold">
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                    ) : b.paymentStatus !== "ran_off" ? (
+                      <span className="text-red-500 font-bold text-sm">{fmtCur(b.stillOwed)}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Fee breakdown — music fee covered first, then house fee */}
+                {(() => {
+                  // Room earnings reduce what's owed on house fee
+                  const effectiveHouseFee = Math.max(0, b.houseFee + b.fines - b.roomCut);
+                  const musicPaid = Math.min(b.amountPaid, b.musicFee);
+                  const housePaid = Math.max(0, b.amountPaid - b.musicFee);
+                  const musicDone = musicPaid >= b.musicFee;
+                  const houseDone = housePaid >= effectiveHouseFee;
+                  return (
+                    <div className="space-y-1 px-1">
+                      {/* Music Fee row */}
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          {musicDone && <Check className="w-3 h-3 text-green-500 shrink-0" />}
+                          <span className={musicDone ? "line-through text-green-600 font-medium" : "text-muted-foreground"}>
+                            Music Fee
+                          </span>
+                          {musicDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
+                        </div>
+                        <span className={`font-medium ${musicDone ? "line-through text-green-500" : "text-foreground"}`}>
+                          {fmtCur(b.musicFee)}
+                        </span>
+                      </div>
+
+                      {/* House Fee row */}
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          {houseDone && <Check className="w-3 h-3 text-green-500 shrink-0" />}
+                          <span className={houseDone ? "line-through text-green-600 font-medium" : "text-muted-foreground"}>
+                            House Fee
+                          </span>
+                          {houseDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
+                        </div>
+                        <span className={`font-medium ${houseDone ? "line-through text-green-500" : "text-foreground"}`}>
+                          {fmtCur(effectiveHouseFee)}
+                          {housePaid > 0 && !houseDone && (
+                            <span className="text-blue-500 ml-1">(−{fmtCur(housePaid)})</span>
+                          )}
+                        </span>
+                      </div>
+
+                      {/* Fine row */}
+                      {b.fines > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-orange-500">Fine</span>
+                          <span className="font-medium text-orange-500">+{fmtCur(b.fines)}</span>
+                        </div>
+                      )}
+
+                    </div>
+                  );
+                })()}
+
+                {/* Record payment */}
+                {!isSettled && b.paymentStatus !== "ran_off" && !isPaying && (
+                  <button
+                    onClick={() => { setPayingId(b.attendanceId); setPayInput(""); }}
+                    className="w-full py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-sm font-semibold transition-all active:scale-95"
+                  >
+                    Record Payment
+                  </button>
+                )}
+
+                {isPaying && (
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm font-semibold text-muted-foreground">$</span>
+                    <input
+                      autoFocus
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={payInput}
+                      onChange={e => setPayInput(e.target.value)}
+                      placeholder={`up to ${fmtCur(b.stillOwed)}`}
+                      className="flex-1 px-3 py-2.5 rounded-xl border-2 border-primary/30 focus:border-primary text-sm font-bold focus:outline-none"
+                      onKeyDown={e => { if (e.key === "Enter") handleRecordPayment(b.attendanceId); if (e.key === "Escape") { setPayingId(null); setPayInput(""); } }}
+                    />
+                    <button
+                      onClick={() => handleRecordPayment(b.attendanceId)}
+                      disabled={markPayment.isPending || !payInput}
+                      className="px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold disabled:opacity-50 transition-all active:scale-95"
+                    >
+                      {markPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm"}
+                    </button>
+                    <button
+                      onClick={() => { setPayingId(null); setPayInput(""); }}
+                      className="px-3 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-all"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DoorCheckIn() {
@@ -847,7 +1048,7 @@ export default function DoorCheckIn() {
       )}
 
       {/* ── Active room sessions strip ─────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-4">
         <ActiveRoomSessionsStrip
           sessions={activeRoomSessions}
           dancers={activeDancers}
@@ -857,6 +1058,11 @@ export default function DoorCheckIn() {
           }
           onEnd={handleEndSession}
         />
+      </div>
+
+      {/* ── Dancer Balances ────────────────────────────────────────────── */}
+      <div className="mb-5">
+        <DancerBalancesPanel />
       </div>
 
       {activePanel === "checkin" ? (

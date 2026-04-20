@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
@@ -15,50 +15,77 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [loading, setLoading] = useState(true);
+const INACTIVITY_MS   = 15 * 60 * 1000;
+const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
 
-  const fetchRole = async (userId: string) => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
-    setRole(data?.role ?? null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user,    setUser]    = useState<User | null>(null);
+  const [role,    setRole]    = useState<AppRole | null>(null);
+  const [loading, setLoading] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
   };
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchRole(session.user.id);
-      setLoading(false);
-    });
+  const signOut = async () => {
+    clearTimer();
+    await supabase.auth.signOut();
+    setUser(null);
+    setRole(null);
+  };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchRole(session.user.id);
-      } else {
-        setRole(null);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const startTimer = () => {
+    clearTimer();
+    timerRef.current = setTimeout(signOut, INACTIVITY_MS);
+  };
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setRole(null);
-  };
+  // Inactivity listeners — attach/detach when login state changes
+  useEffect(() => {
+    if (!user) { clearTimer(); return; }
+    startTimer();
+    ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, startTimer, { passive: true }));
+    return () => {
+      clearTimer();
+      ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, startTimer));
+    };
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auth state — init + subscribe
+  useEffect(() => {
+    // Restore existing session on mount — await role before clearing loading
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        const { data } = await supabase
+          .from("user_roles").select("role")
+          .eq("user_id", session.user.id).maybeSingle();
+        setRole(data?.role ?? null);
+      }
+      setLoading(false);
+    });
+
+    // React to future login / logout / token-refresh events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+      if (!nextUser) {
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+      supabase.from("user_roles").select("role")
+        .eq("user_id", nextUser.id).maybeSingle()
+        .then(({ data }) => setRole(data?.role ?? null));
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, role, loading, signIn, signOut }}>

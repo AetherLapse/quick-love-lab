@@ -7,7 +7,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useCheckedInDancersToday, useDancerCheckOut, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
+import { useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -128,10 +128,12 @@ function CheckoutSummary({
   onConfirm: (waiveCode: boolean, codeId?: string) => void;
   confirming: boolean;
 }) {
-  const [waiverCode, setWaiverCode] = useState("");
-  const [codeError, setCodeError]   = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
-  const [validCode, setValidCode]   = useState<{ id: string; reason: string } | null>(null);
+  const [waiverCode, setWaiverCode]     = useState("");
+  const [codeError, setCodeError]       = useState<string | null>(null);
+  const [validating, setValidating]     = useState(false);
+  const [validCode, setValidCode]       = useState<{ id: string; reason: string } | null>(null);
+  const [ranOffConfirm, setRanOffConfirm] = useState(false);
+  const markPayment = useMarkDancerPayment();
 
   const hasFine = (() => {
     const now = new Date(); const h = now.getHours(); const m = now.getMinutes();
@@ -242,6 +244,123 @@ function CheckoutSummary({
             <span className="text-red-700 font-bold">{fmt(summary.historicalOutstanding)}</span>
           </div>
         )}
+
+        {/* ── House fee payment status ── */}
+        {(() => {
+          const houseFee   = Number(summary.entranceFee ?? 0);
+          const musicFee   = 20;
+          const amountPaid = Number(summary.amountPaid ?? 0);
+          const totalOwed  = houseFee + musicFee - Number(summary.tonightEarnings ?? 0);
+          const stillOwed  = Math.max(0, totalOwed - amountPaid);
+          const payStatus  = summary.paymentStatus ?? "unpaid";
+          const isSettled  = payStatus === "paid_checkin" || payStatus === "paid_during" || payStatus === "paid_checkout" || stillOwed <= 0;
+          const isRanOff   = payStatus === "ran_off";
+
+          if (isRanOff) return (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-900/10 border border-red-400 text-sm text-red-700 font-semibold">
+              <X className="w-4 h-4 shrink-0" /> Marked as Ran Off — did not pay
+            </div>
+          );
+
+          return (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">House Fee Payment</p>
+              {/* Per-fee allocation: music first, then house */}
+              {(() => {
+                const effectiveHouseFee = Math.max(0, houseFee - Number(summary.tonightEarnings ?? 0));
+                const musicPaid = Math.min(amountPaid, musicFee);
+                const housePaid = Math.max(0, amountPaid - musicFee);
+                const musicDone = musicPaid >= musicFee;
+                const houseDone = housePaid >= effectiveHouseFee;
+                return (
+                  <div className="space-y-1.5">
+                    {/* Music Fee */}
+                    <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm ${musicDone ? "bg-green-50 border border-green-200" : "bg-secondary/40"}`}>
+                      <div className="flex items-center gap-2">
+                        {musicDone && <Check className="w-3.5 h-3.5 text-green-600 shrink-0" />}
+                        <span className={musicDone ? "line-through text-green-700 font-medium" : "text-muted-foreground"}>
+                          Music Fee
+                        </span>
+                        {musicDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
+                      </div>
+                      <span className={`font-bold ${musicDone ? "line-through text-green-500" : "text-foreground"}`}>
+                        {fmt(musicFee)}
+                      </span>
+                    </div>
+
+                    {/* House Fee */}
+                    <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm ${houseDone ? "bg-green-50 border border-green-200" : housePaid > 0 ? "bg-blue-50/50 border border-blue-200" : "bg-secondary/40"}`}>
+                      <div className="flex items-center gap-2">
+                        {houseDone && <Check className="w-3.5 h-3.5 text-green-600 shrink-0" />}
+                        <span className={houseDone ? "line-through text-green-700 font-medium" : "text-muted-foreground"}>
+                          House Fee
+                        </span>
+                        {houseDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
+                        {housePaid > 0 && !houseDone && (
+                          <span className="text-[9px] font-medium text-blue-600">−{fmt(housePaid)} applied</span>
+                        )}
+                      </div>
+                      <span className={`font-bold ${houseDone ? "line-through text-green-500" : "text-foreground"}`}>
+                        {fmt(effectiveHouseFee)}
+                      </span>
+                    </div>
+
+                    {/* Still owed summary */}
+                    {stillOwed > 0 && (
+                      <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-sm">
+                        <span className="text-red-700 font-semibold">Still Owed</span>
+                        <span className="text-red-700 font-bold">{fmt(stillOwed)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {!isSettled && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    disabled={markPayment.isPending}
+                    onClick={async () => {
+                      await markPayment.mutateAsync({ attendanceId: dancer.id, amountPaid: houseFee + musicFee, status: "paid_checkout" });
+                      toast.success("Payment recorded at check-out");
+                    }}
+                    className="py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {markPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Paid Now</>}
+                  </button>
+                  {!ranOffConfirm ? (
+                    <button
+                      onClick={() => setRanOffConfirm(true)}
+                      className="py-3 rounded-xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 hover:border-red-400 transition-all"
+                    >
+                      Ran Off
+                    </button>
+                  ) : (
+                    <button
+                      disabled={markPayment.isPending}
+                      onClick={async () => {
+                        await markPayment.mutateAsync({ attendanceId: dancer.id, amountPaid: 0, status: "ran_off" });
+                        toast.warning(`${stageName} marked as ran off without paying`);
+                        setRanOffConfirm(false);
+                      }}
+                      className="py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 animate-pulse"
+                    >
+                      {markPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Ran Off"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {isSettled && (
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-50 border border-green-200 text-sm text-green-700 font-semibold">
+                  <Check className="w-4 h-4 shrink-0" /> House fees settled
+                  {payStatus === "paid_checkin" && <span className="text-xs font-normal text-green-600 ml-1">· paid at check-in</span>}
+                  {payStatus === "paid_during" && <span className="text-xs font-normal text-green-600 ml-1">· paid during shift</span>}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Early leave fine handling */}

@@ -181,6 +181,77 @@ export function usePresentDancersToday() {
   });
 }
 
+const MUSIC_FEE_PER_SHIFT = 20;
+
+export interface DancerBalance {
+  attendanceId: string;
+  dancerId: string;
+  stageName: string;
+  houseFee: number;
+  musicFee: number;
+  fines: number;
+  roomCut: number;
+  totalDue: number;
+  amountPaid: number;
+  stillOwed: number;
+  paymentStatus: string;
+}
+
+/** Per-dancer fee balances for all dancers currently checked in today */
+export function useDancerBalancesToday() {
+  return useQuery({
+    queryKey: ["dancer_balances_today"],
+    queryFn: async () => {
+      const dateStr = today();
+
+      const [{ data: logs }, { data: roomSessions }] = await Promise.all([
+        supabase
+          .from("attendance_log")
+          .select("id, dancer_id, entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, dancers(stage_name)")
+          .eq("shift_date", dateStr)
+          .is("clock_out", null),
+        supabase
+          .from("room_sessions")
+          .select("dancer_id, dancer_cut")
+          .gte("created_at", `${dateStr}T00:00:00`)
+          .lte("created_at", `${dateStr}T23:59:59`),
+      ]);
+
+      const cutByDancer: Record<string, number> = {};
+      for (const rs of roomSessions ?? []) {
+        cutByDancer[rs.dancer_id] = (cutByDancer[rs.dancer_id] ?? 0) + Number(rs.dancer_cut ?? 0);
+      }
+
+      const seen = new Set<string>();
+      const result: DancerBalance[] = [];
+      for (const log of logs ?? []) {
+        if (seen.has(log.dancer_id)) continue;
+        seen.add(log.dancer_id);
+        const houseFee = Number(log.entrance_fee_amount ?? 0);
+        const fines    = log.fine_waived ? 0 : Number((log as any).early_leave_fine ?? 0);
+        const roomCut  = cutByDancer[log.dancer_id] ?? 0;
+        const totalDue = houseFee + MUSIC_FEE_PER_SHIFT + fines - roomCut;
+        const amountPaid = Number((log as any).amount_paid ?? 0);
+        result.push({
+          attendanceId:  log.id,
+          dancerId:      log.dancer_id,
+          stageName:     (log as any).dancers?.stage_name ?? "Unknown",
+          houseFee,
+          musicFee:      MUSIC_FEE_PER_SHIFT,
+          fines,
+          roomCut,
+          totalDue,
+          amountPaid,
+          stillOwed:     Math.max(0, totalDue - amountPaid),
+          paymentStatus: (log as any).payment_status ?? "unpaid",
+        });
+      }
+      return result;
+    },
+    refetchInterval: 20000,
+  });
+}
+
 export function useGuestVisitHistory(guestId: string | null) {
   return useQuery({
     queryKey: ["guest_visit_history", guestId],
@@ -648,12 +719,12 @@ export function useDancerCheckIn() {
       method: "pin" | "facial";
       authorId: string;
     }) => {
-      // Insert attendance log
-      const { error: attErr } = await supabase.from("attendance_log").insert({
-        dancer_id: dancerId,
-        entrance_fee_amount: entranceFee,
-        shift_date: today(),
-      });
+      // Insert attendance log — select id so caller can record payment immediately
+      const { data: attRow, error: attErr } = await supabase
+        .from("attendance_log")
+        .insert({ dancer_id: dancerId, entrance_fee_amount: entranceFee, shift_date: today() })
+        .select("id")
+        .single();
       if (attErr) throw attErr;
 
       // Append to event log
@@ -663,6 +734,8 @@ export function useDancerCheckIn() {
         payload: { method, house_fee_applied: entranceFee },
         author_id: authorId,
       });
+
+      return { attendanceId: attRow.id as string };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance_log"] });
@@ -671,6 +744,34 @@ export function useDancerCheckIn() {
   });
 
   return { findByPin, checkIn };
+}
+
+export type PaymentStatus = "unpaid" | "paid_checkin" | "paid_during" | "paid_checkout" | "ran_off";
+
+/** Record a dancer payment against their attendance_log row */
+export function useMarkDancerPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      attendanceId,
+      amountPaid,
+      status,
+    }: {
+      attendanceId: string;
+      amountPaid: number;
+      status: PaymentStatus;
+    }) => {
+      const { error } = await supabase
+        .from("attendance_log")
+        .update({ amount_paid: amountPaid, payment_status: status } as any)
+        .eq("id", attendanceId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dancer_balances_today"] });
+      qc.invalidateQueries({ queryKey: ["attendance_log"] });
+    },
+  });
 }
 
 // ─── Read: checked-in dancers still on shift today ───────────────────────────

@@ -76,7 +76,7 @@ serve(async (req) => {
     // Tonight's attendance entry (open clock-out)
     const { data: attendance } = await supabase
       .from("attendance_log")
-      .select("id, clock_in, clock_out, entrance_fee_amount, early_leave_fine, fine_waived, shift_date")
+      .select("id, clock_in, clock_out, entrance_fee_amount, early_leave_fine, fine_waived, shift_date, amount_paid, payment_status")
       .eq("dancer_id", dancer_id)
       .eq("shift_date", todayStr)
       .is("clock_out", null)
@@ -136,7 +136,9 @@ serve(async (req) => {
       earlyFine,
       tonightNet,
       historicalOutstanding,
-      totalOwed: historicalOutstanding + (tonightNet < 0 ? Math.abs(tonightNet) : 0),
+      totalOwed:     historicalOutstanding + (tonightNet < 0 ? Math.abs(tonightNet) : 0),
+      amountPaid:    Number(attendance?.amount_paid ?? 0),
+      paymentStatus: attendance?.payment_status ?? "unpaid",
     });
   }
 

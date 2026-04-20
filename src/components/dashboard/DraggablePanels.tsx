@@ -48,9 +48,11 @@ export function PanelStack({ storageKey, panels }: { storageKey: string; panels:
   const defaultOrder = panels.map(p => p.id);
   const { order, reorder, reset } = usePanelOrder(storageKey, defaultOrder);
 
-  const dragFrom = useRef<number | null>(null);
-  const [dragOver,   setDragOver]   = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const dragFrom      = useRef<number | null>(null);
+  const [dragOver,    setDragOver]    = useState<number | null>(null);
+  const [isDragging,  setIsDragging]  = useState(false);
+  // Only the panel whose grip is being held becomes draggable — prevents click interception
+  const [draggable,   setDraggable]   = useState<number | null>(null);
 
   const panelMap = Object.fromEntries(panels.map(p => [p.id, p]));
   const ordered  = order.map(id => panelMap[id]).filter(Boolean);
@@ -59,9 +61,9 @@ export function PanelStack({ storageKey, panels }: { storageKey: string; panels:
   const onDragOver  = (e: React.DragEvent, i: number) => { e.preventDefault(); setDragOver(i); };
   const onDrop      = (i: number) => {
     if (dragFrom.current !== null && dragFrom.current !== i) reorder(dragFrom.current, i);
-    dragFrom.current = null; setDragOver(null); setIsDragging(false);
+    dragFrom.current = null; setDragOver(null); setIsDragging(false); setDraggable(null);
   };
-  const onDragEnd   = () => { dragFrom.current = null; setDragOver(null); setIsDragging(false); };
+  const onDragEnd   = () => { dragFrom.current = null; setDragOver(null); setIsDragging(false); setDraggable(null); };
 
   const isReordered = JSON.stringify(order) !== JSON.stringify(defaultOrder);
 
@@ -85,23 +87,25 @@ export function PanelStack({ storageKey, panels }: { storageKey: string; panels:
         return (
           <div
             key={panel.id}
-            draggable
+            draggable={draggable === i}
             onDragStart={() => onDragStart(i)}
             onDragOver={e => onDragOver(e, i)}
             onDrop={() => onDrop(i)}
             onDragEnd={onDragEnd}
             className={`relative group/panel transition-all duration-150
-              ${isGrabbed ? "opacity-40 scale-[0.99]"                     : ""}
+              ${isGrabbed ? "opacity-40 scale-[0.99]"                      : ""}
               ${isTarget  ? "ring-2 ring-primary ring-offset-2 rounded-2xl" : ""}`}
           >
-            {/* Drag handle — desktop only, appears on hover */}
+            {/* Drag handle — desktop only, appears on hover. mousedown enables draggable on this panel only. */}
             <div
               className="hidden md:flex absolute top-2 right-2 z-[60] items-center gap-1.5
                          px-2 py-1 rounded-md
                          bg-white border border-border shadow-sm
                          opacity-0 group-hover/panel:opacity-100 transition-opacity duration-150
-                         cursor-grab active:cursor-grabbing select-none pointer-events-none"
+                         cursor-grab active:cursor-grabbing select-none"
               title={`Drag to reorder — ${panel.label}`}
+              onMouseDown={() => setDraggable(i)}
+              onMouseUp={() => setDraggable(null)}
             >
               <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-[10px] text-muted-foreground font-medium leading-none">drag</span>

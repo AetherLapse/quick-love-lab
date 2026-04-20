@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X } from "lucide-react";
-import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
+import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -63,13 +63,14 @@ interface DancerLogEntry {
   time: string;
   method: "Face Scan" | "PIN Entry";
   fee: number;
+  paidAtCheckin: boolean;
 }
 
 interface DancerCheckInTabProps {
   onNewDancer: () => void;
 }
 
-type Step = "idle" | "face-camera" | "face-processing" | "face-failed" | "pin" | "success";
+type Step = "idle" | "face-camera" | "face-processing" | "face-failed" | "pin" | "success" | "payment";
 
 // ─── Enrollment panel ─────────────────────────────────────────────────────────
 type EnrollStep = "staff_pin" | "dl_scan" | "details" | "face" | "processing" | "done" | "error";
@@ -739,7 +740,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const { user, role } = useAuth();
   const [mode, setMode] = useState<"checkin" | "enroll" | "checkout">("checkin");
   const [step, setStep] = useState<Step>("idle");
-  const [result, setResult] = useState<{ name: string; fee: number } | null>(null);
+  const [result, setResult] = useState<{ name: string; fee: number; attendanceId: string } | null>(null);
   const [resultMethod, setResultMethod] = useState<"Face Scan" | "PIN Entry">("Face Scan");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
@@ -753,11 +754,12 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const streamRef = useRef<MediaStream | null>(null);
 
   const { findByPin, checkIn } = useDancerCheckIn();
+  const markPayment = useMarkDancerPayment();
 
   const now = () => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-  const addToLog = (name: string, method: "Face Scan" | "PIN Entry", fee: number) => {
-    setDancerLog((prev) => [{ name, time: now(), method, fee }, ...prev].slice(0, 8));
+  const addToLog = (name: string, method: "Face Scan" | "PIN Entry", fee: number, paidAtCheckin = false) => {
+    setDancerLog((prev) => [{ name, time: now(), method, fee, paidAtCheckin }, ...prev].slice(0, 8));
   };
 
   const stopFaceCamera = useCallback(() => {
@@ -802,11 +804,10 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         return;
       }
 
-      await checkIn.mutateAsync({ dancerId, entranceFee, method, authorId: user.id });
-      setResult({ name: stageName, fee: entranceFee });
+      const { attendanceId } = await checkIn.mutateAsync({ dancerId, entranceFee, method, authorId: user.id });
+      setResult({ name: stageName, fee: entranceFee, attendanceId });
       setResultMethod(method === "facial" ? "Face Scan" : "PIN Entry");
-      setStep("success");
-      addToLog(stageName, method === "facial" ? "Face Scan" : "PIN Entry", entranceFee);
+      setStep("payment");
       onNewDancer();
     },
     [checkIn, onNewDancer]
@@ -1084,19 +1085,62 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
           </div>
         )}
 
-        {/* SUCCESS */}
+        {/* PAYMENT PROMPT — shown right after identity verified */}
+        {step === "payment" && result && (
+          <div className="animate-fade-in space-y-4">
+            {/* Identity confirmed banner */}
+            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
+              <Check className="w-5 h-5 text-green-600 shrink-0" />
+              <div>
+                <p className="font-bold text-green-800">{result.name} — {resultMethod === "Face Scan" ? "Face Verified" : "PIN Verified"}</p>
+                <p className="text-xs text-green-600">Checked in at {now()}</p>
+              </div>
+            </div>
+
+            {/* Fee + payment prompt */}
+            <div className="rounded-2xl bg-secondary/40 px-5 py-4 text-center space-y-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">House Fee Due</p>
+              <p className="text-4xl font-extrabold text-foreground">${result.fee}</p>
+            </div>
+
+            <p className="text-sm font-semibold text-center text-foreground">Did she pay now?</p>
+
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                disabled={markPayment.isPending}
+                onClick={async () => {
+                  await markPayment.mutateAsync({ attendanceId: result.attendanceId, amountPaid: result.fee, status: "paid_checkin" });
+                  addToLog(result.name, resultMethod, result.fee, true);
+                  toast.success(`${result.name} — $${result.fee} paid at check-in`);
+                  setStep("success");
+                }}
+                className="w-full py-5 rounded-2xl bg-green-600 hover:bg-green-700 text-white text-lg font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {markPayment.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Check className="w-5 h-5" /> Yes — Paid ${result.fee}</>}
+              </button>
+
+              <button
+                onClick={() => { addToLog(result.name, resultMethod, result.fee, false); setStep("success"); }}
+                className="w-full py-4 rounded-2xl border-2 border-border hover:border-primary/50 text-base font-semibold text-muted-foreground hover:text-foreground transition-all active:scale-95"
+              >
+                No — Will Pay Later
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SUCCESS — after payment decision */}
         {step === "success" && result && (
           <div className="animate-fade-in space-y-4">
             <div className="bg-success/10 border border-success/30 rounded-xl p-5 space-y-1.5">
               <p className="text-success font-bold text-xl font-heading tracking-wide flex items-center gap-2">
-                <Check className="w-5 h-5" /> {result.name} —{" "}
-                {resultMethod === "Face Scan" ? "FACE VERIFIED" : "PIN VERIFIED"}
+                <Check className="w-5 h-5" /> {result.name} checked in
               </p>
               <p className="text-primary font-medium flex items-center gap-1">
-                <DollarSign className="w-4 h-4" /> ${result.fee} House Fee Applied
+                <DollarSign className="w-4 h-4" /> ${result.fee} house fee
               </p>
               <p className="text-muted-foreground text-sm flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> Check-in logged: {now()}
+                <Clock className="w-3.5 h-3.5" /> {now()}
               </p>
             </div>
             <button
@@ -1121,8 +1165,9 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
                 <Check className="w-4 h-4 text-success flex-shrink-0" />
                 <span className="text-foreground font-medium flex-1">{entry.name}</span>
                 <span className="text-muted-foreground">{entry.time}</span>
-                <span className="text-muted-foreground text-xs bg-secondary/60 px-2 py-0.5 rounded">{entry.method}</span>
-                <span className="text-primary font-medium">${entry.fee} fee</span>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${entry.paidAtCheckin ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {entry.paidAtCheckin ? "Paid" : "Owes $" + entry.fee}
+                </span>
               </div>
             ))}
           </div>

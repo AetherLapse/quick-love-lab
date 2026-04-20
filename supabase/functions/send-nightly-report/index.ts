@@ -19,7 +19,7 @@ function isoDate(d: Date) {
 
 async function fetchDayData(dateStr: string) {
   const [{ data: entries }, { data: attendance }, { data: rooms }] = await Promise.all([
-    supabase.from("customer_entries").select("guest_count, door_fee").eq("entry_date", dateStr),
+    supabase.from("customer_entries").select("guest_count, door_fee").eq("shift_date", dateStr),
     supabase.from("attendance_log")
       .select("dancer_id, entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, dancers(stage_name)")
       .eq("shift_date", dateStr),
@@ -62,8 +62,8 @@ async function fetchWeekData(endDate: Date) {
   const endStr   = isoDate(endDate);
 
   const [{ data: entries }, { data: attendance }, { data: rooms }] = await Promise.all([
-    supabase.from("customer_entries").select("guest_count, door_fee, entry_date")
-      .gte("entry_date", startStr).lte("entry_date", endStr),
+    supabase.from("customer_entries").select("guest_count, door_fee, shift_date")
+      .gte("shift_date", startStr).lte("shift_date", endStr),
     supabase.from("attendance_log")
       .select("entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, shift_date")
       .gte("shift_date", startStr).lte("shift_date", endStr),
@@ -83,7 +83,7 @@ async function fetchWeekData(endDate: Date) {
   // Group by date for per-night breakdown
   const byDate: Record<string, { guests: number; door: number; rooms: number; dancers: number }> = {};
   const addDay = (d: string) => { if (!byDate[d]) byDate[d] = { guests: 0, door: 0, rooms: 0, dancers: 0 }; };
-  (entries ?? []).forEach((e: any) => { addDay(e.entry_date); byDate[e.entry_date].guests += Number(e.guest_count ?? 0); byDate[e.entry_date].door += Number(e.door_fee ?? 0); });
+  (entries ?? []).forEach((e: any) => { addDay(e.shift_date); byDate[e.shift_date].guests += Number(e.guest_count ?? 0); byDate[e.shift_date].door += Number(e.door_fee ?? 0); });
   (rooms   ?? []).forEach((r: any) => { addDay(r.shift_date); byDate[r.shift_date].rooms += Number(r.house_cut ?? 0); });
   (attendance ?? []).forEach((a: any) => { addDay(a.shift_date); byDate[a.shift_date].dancers++; });
 

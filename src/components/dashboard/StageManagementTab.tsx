@@ -199,7 +199,7 @@ function QueueRow({
   const [showFine, setShowFine] = useState(false);
   const graceSeconds = useRoomGrace(entry.dancerId);
   const isNextUp     = index === 0;
-  const isLate       = isNextUp && graceSeconds === null && entry.inRoom === false && !entry.inRoom;
+  const isLate       = isNextUp && graceSeconds === null && !entry.inRoom;
 
   return (
     <div className="relative">

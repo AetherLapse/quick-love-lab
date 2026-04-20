@@ -320,7 +320,7 @@ export function PerformersTab() {
       const isLate = (() => {
         if (!d.checkIn) return false;
         const t = new Date(`1970-01-01 ${d.checkIn}`);
-        return t.getHours() >= 20 && t.getMinutes() >= 30;
+        return t.getHours() > 20 || (t.getHours() === 20 && t.getMinutes() >= 30);
       })();
       return {
         ...d,

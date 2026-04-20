@@ -551,7 +551,7 @@ export function SettingsTab() {
     try {
       const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/otp", {
         method: "POST",
-        headers: { Authorization: `Bearer ${ANON_JWT}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ action: "send", contact, type: "email", dancer_name: form.full_name.trim() || undefined }),
       });
       const data = await res.json();
@@ -569,7 +569,7 @@ export function SettingsTab() {
     try {
       const res = await fetch("https://fwinnniiugjfmpkgybyu.supabase.co/functions/v1/otp", {
         method: "POST",
-        headers: { Authorization: `Bearer ${ANON_JWT}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ action: "verify", token: emailOtp.token, code: emailOtp.input.trim() }),
       });
       const data = await res.json();

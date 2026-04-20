@@ -58,7 +58,7 @@ const navItems: NavItem[] = [
     path: "/rooms",
     label: "Rooms",
     icon: BedDouble,
-    roles: ["admin", "owner", "manager", "room_attendant"],
+    roles: ["admin", "owner", "manager", "room_attendant", "door_staff"],
   },
   {
     path: "/dancers",
@@ -283,22 +283,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <KioskLockScreen isLocked={isLocked} />
-      {/* Desktop sidebar — fixed width */}
-      <aside className="hidden md:block w-56 shrink-0 sticky top-0 h-screen">
+      {/* Desktop sidebar — only on true large screens (≥1280px) */}
+      <aside className="hidden xl:block w-56 shrink-0 sticky top-0 h-screen">
         <Sidebar {...sidebarProps} />
       </aside>
 
-      {/* Mobile backdrop */}
+      {/* Backdrop — phones + tablets (< 1280px) */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/50"
+          className="xl:hidden fixed inset-0 z-40 bg-black/50"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Mobile drawer */}
+      {/* Drawer — phones + tablets (< 1280px) */}
       <aside
-        className={`md:hidden fixed top-0 left-0 z-50 h-full w-56 transition-transform duration-200 ${
+        className={`xl:hidden fixed top-0 left-0 z-50 h-full w-64 transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -307,22 +307,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile header */}
+        {/* Top bar — shown on phones + tablets (< 1280px) */}
         <header
-          className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-border"
+          className="xl:hidden flex items-center gap-3 px-4 py-3 border-b border-border"
           style={{ background: "hsl(240 18% 10%)" }}
         >
           <button
             onClick={() => setMobileOpen(true)}
-            className="text-white/60 hover:text-white"
+            className="text-white/60 hover:text-white p-1"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-6 h-6" />
           </button>
-          <span className="text-white text-sm font-semibold">2NYT</span>
+          <span className="text-white text-base font-semibold">2NYT</span>
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 md:p-8 max-w-7xl mx-auto">{children}</div>
+          <div className="p-4 xl:p-8 max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
     </div>

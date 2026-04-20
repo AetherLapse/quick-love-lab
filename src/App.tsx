@@ -37,7 +37,7 @@ const DASHBOARD_ROLES = ["admin", "owner", "manager", "house_mom"]              
 const DOOR_ROLES     = ["admin", "owner", "manager", "door_staff"]                  as const;
 const STAGE_ROLES    = ["admin", "owner", "manager", "house_mom", "room_attendant"] as const;
 const REPORTS_ROLES  = ["admin", "owner", "manager", "door_staff"]                  as const;
-const ROOMS_ROLES    = ["admin", "owner", "manager", "room_attendant"]              as const;
+const ROOMS_ROLES    = ["admin", "owner", "manager", "room_attendant", "door_staff"] as const;
 const BACKROOM_ROLES = ["admin", "owner", "manager", "backroom_tv", "bartender", "dj"] as const;
 
 const App = () => (

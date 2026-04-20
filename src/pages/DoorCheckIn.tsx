@@ -284,7 +284,7 @@ function DancerCard({
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border-2 transition-all text-center
+      className={`flex flex-col items-center gap-2 py-4 px-2 rounded-xl border-2 transition-all text-center active:scale-95
         ${selected
           ? "border-primary bg-primary/10"
           : `${s.border} ${s.bg} hover:border-primary/50`
@@ -292,18 +292,18 @@ function DancerCard({
     >
       {/* Initial circle */}
       <span
-        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold
+        className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold
           ${selected ? "bg-primary text-white" : "bg-white border border-border text-muted-foreground"}`}
       >
         {initial}
       </span>
 
       {/* Name */}
-      <span className={`text-xs font-semibold leading-none ${selected ? "text-primary" : "text-foreground"}`}>
+      <span className={`text-sm font-semibold leading-tight ${selected ? "text-primary" : "text-foreground"}`}>
         {dancer.stage_name}
       </span>
       {dancer.dancer_number != null && (
-        <span className="text-[9px] text-muted-foreground font-mono">D{String(dancer.dancer_number).padStart(3, "0")}</span>
+        <span className="text-[10px] text-muted-foreground font-mono">D{String(dancer.dancer_number).padStart(3, "0")}</span>
       )}
 
       {/* Status */}
@@ -813,25 +813,25 @@ export default function DoorCheckIn() {
   return (
     <AppLayout>
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Door Entry</h1>
-          <p className="text-sm text-muted-foreground">{dateStr}</p>
+          <h1 className="text-3xl font-bold text-foreground">Door Entry</h1>
+          <p className="text-base text-muted-foreground">{dateStr}</p>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold" style={{ color: "hsl(328 78% 47%)" }}>
+          <p className="text-3xl font-bold" style={{ color: "hsl(328 78% 47%)" }}>
             ${totalRevenue.toLocaleString()}
           </p>
-          <p className="text-xs text-muted-foreground">{totalGuests} guests</p>
+          <p className="text-sm text-muted-foreground">{totalGuests} guests</p>
         </div>
       </div>
 
       {/* ── Panel toggle (Door / Dancer Check-In) ────────────────────────── */}
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-3 mb-6">
         {(["door", "checkin"] as const).map(p => (
           <button key={p} onClick={() => setActivePanel(p)}
-            className={`px-6 py-3 rounded-xl text-base font-semibold border-2 transition-all
-              ${activePanel === p ? "border-primary bg-primary text-white" : "border-border bg-white text-muted-foreground hover:border-primary/50"}`}>
+            className={`flex-1 py-4 rounded-2xl text-lg font-bold border-2 transition-all active:scale-95
+              ${activePanel === p ? "border-primary bg-primary text-white shadow-md" : "border-border bg-white text-muted-foreground hover:border-primary/50"}`}>
             {p === "door" ? "Door Entry" : "Dancer Check-In"}
           </button>
         ))}
@@ -864,19 +864,19 @@ export default function DoorCheckIn() {
       ) : (
         <div className="space-y-5">
           {/* ── Entry tier buttons ──────────────────────────────────────── */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {entryTiers.filter(t => t.is_active).map(tier => (
               <button
                 key={tier.id}
                 onClick={() => handleTierClick(tier as any)}
                 disabled={manualAdd.isPending}
-                className={`flex flex-col items-center justify-center gap-1.5 py-6 px-3 rounded-2xl border-2 transition-all disabled:opacity-50 active:scale-95
+                className={`flex flex-col items-center justify-center gap-2 py-7 px-4 rounded-2xl border-2 transition-all disabled:opacity-50 active:scale-95 min-h-[96px]
                   ${pendingTier?.id === tier.id
                     ? "border-primary bg-primary/10"
                     : "border-border bg-white hover:border-primary/60 hover:bg-primary/5"}`}
               >
-                <span className="text-base font-bold text-foreground leading-tight text-center">{tier.name}</span>
-                <span className="text-sm font-semibold text-muted-foreground">
+                <span className="text-lg font-bold text-foreground leading-tight text-center">{tier.name}</span>
+                <span className="text-base font-semibold text-muted-foreground">
                   {tier.price === 0 ? "Free" : (tier as any).admits_count > 1 ? `$${tier.price} / ${(tier as any).admits_count}` : `$${tier.price}`}
                 </span>
               </button>
@@ -1065,7 +1065,7 @@ export default function DoorCheckIn() {
             {activeDancers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">No dancers checked in yet</p>
             ) : viewMode === "grid" ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {activeDancers.map(d => (
                   <DancerCard
                     key={d.id}
@@ -1110,20 +1110,20 @@ export default function DoorCheckIn() {
               </div>
 
               {/* Dance tier grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              <div className="grid grid-cols-2 gap-3 mb-4">
                 {danceTiers.map(tier => {
                   const isActive = selectedTier?.id === tier.id;
                   return (
                     <button
                       key={tier.id}
                       onClick={() => setSelectedTier(tier)}
-                      className={`flex flex-col items-start gap-1 px-4 py-5 rounded-xl border transition-all text-left active:scale-95
+                      className={`flex flex-col items-start gap-1.5 px-5 py-5 rounded-2xl border-2 transition-all text-left active:scale-95 min-h-[80px]
                         ${isActive
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border bg-secondary/30 hover:border-primary/60 hover:bg-primary/5"}`}
                     >
-                      <span className={`text-sm ${isActive ? "text-primary/80" : "text-muted-foreground"}`}>{tier.name}</span>
-                      <span className={`text-base font-bold ${isActive ? "text-primary" : "text-foreground"}`}>
+                      <span className={`text-sm font-medium ${isActive ? "text-primary/80" : "text-muted-foreground"}`}>{tier.name}</span>
+                      <span className={`text-xl font-bold ${isActive ? "text-primary" : "text-foreground"}`}>
                         {tier.price === 0 ? "Custom" : `$${tier.price}`}
                       </span>
                     </button>
@@ -1189,18 +1189,18 @@ export default function DoorCheckIn() {
           )}
 
           {/* ── Report shortcuts ─────────────────────────────────────────── */}
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-3">
             <button onClick={() => setReportType("door")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
-              <FileText className="w-4 h-4" /> Run Door Report
+              className="flex items-center justify-center gap-2 py-4 rounded-2xl border border-border bg-white hover:border-primary/50 text-base font-semibold text-foreground transition-all shadow-sm active:scale-95">
+              <FileText className="w-5 h-5" /> Door Report
             </button>
             <button onClick={() => setReportType("dancer")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
-              <FileText className="w-4 h-4" /> Run Dancer Report
+              className="flex items-center justify-center gap-2 py-4 rounded-2xl border border-border bg-white hover:border-primary/50 text-base font-semibold text-foreground transition-all shadow-sm active:scale-95">
+              <FileText className="w-5 h-5" /> Dancer Report
             </button>
             <button onClick={() => setReportType("full")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-white hover:border-primary/50 text-sm font-medium text-foreground transition-all shadow-sm">
-              <FileText className="w-4 h-4" /> Run Full Report
+              className="flex items-center justify-center gap-2 py-4 rounded-2xl border border-border bg-white hover:border-primary/50 text-base font-semibold text-foreground transition-all shadow-sm active:scale-95">
+              <FileText className="w-5 h-5" /> Full Report
             </button>
           </div>
         </div>

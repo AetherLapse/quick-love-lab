@@ -1,10 +1,10 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import {
-  Mic2, Play, Pause, SkipForward, RotateCcw, GripVertical,
+  Mic2, SkipForward, GripVertical,
   UserMinus, RefreshCw, Clock, BedDouble, ArrowUpFromLine, ArrowDownToLine,
-  DollarSign, AlertTriangle, X, Trash2,
+  DollarSign, AlertTriangle, X, Trash2, History,
 } from "lucide-react";
-import { useStage, useElapsed, useRoomGrace, type StageEntry } from "@/contexts/StageContext";
+import { useStage, useElapsed, useRoomGrace, type StageEntry, type StageHistoryEntry } from "@/contexts/StageContext";
 import { useAttendanceLogs, useActiveRoomSessions, useActiveDancers, today } from "@/hooks/useDashboardData";
 import { toast } from "sonner";
 
@@ -23,11 +23,11 @@ function playBeep(freq = 880, duration = 0.25, vol = 0.4) {
 }
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
-function CountdownRing({ seconds, total = 600, paused }: { seconds: number; total?: number; paused: boolean }) {
+function CountdownRing({ seconds, total = 600 }: { seconds: number; total?: number }) {
   const r    = 36;
   const circ = 2 * Math.PI * r;
   const dash = circ * (seconds / total);
-  const color = paused ? "#94a3b8" : seconds < 60 ? "#ef4444" : seconds < 180 ? "#f59e0b" : "hsl(328 78% 47%)";
+  const color = seconds < 60 ? "#ef4444" : seconds < 180 ? "#f59e0b" : "hsl(328 78% 47%)";
 
   return (
     <svg width="88" height="88" className="shrink-0">
@@ -39,10 +39,61 @@ function CountdownRing({ seconds, total = 600, paused }: { seconds: number; tota
       <text x="44" y="40" textAnchor="middle" fontSize="14" fontWeight="bold" fill={color}>
         {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
       </text>
-      <text x="44" y="55" textAnchor="middle" fontSize="9" fill="#94a3b8">
-        {paused ? "PAUSED" : "NEXT"}
-      </text>
+      <text x="44" y="55" textAnchor="middle" fontSize="9" fill="#94a3b8">NEXT</text>
     </svg>
+  );
+}
+
+// ── Reason modal ──────────────────────────────────────────────────────────────
+const SKIP_REASONS   = ["Not ready", "In room session", "Taking a break", "Customer request", "Technical issue", "Other"];
+const REMOVE_REASONS = ["Left for the night", "Called out sick", "Personal reason", "Customer complaint", "Other"];
+
+function ReasonModal({ title, reasons, onConfirm, onCancel }: {
+  title:     string;
+  reasons:   string[];
+  onConfirm: (reason: string) => void;
+  onCancel:  () => void;
+}) {
+  const [selected, setSelected] = useState("");
+  const [custom,   setCustom]   = useState("");
+  const reason = selected === "Other" ? custom.trim() : selected;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-foreground">{title}</h3>
+          <button onClick={onCancel} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="space-y-2">
+          {reasons.map(r => (
+            <button key={r} onClick={() => setSelected(r)}
+              className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${selected === r ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
+              {r}
+            </button>
+          ))}
+        </div>
+        {selected === "Other" && (
+          <input
+            value={custom}
+            onChange={e => setCustom(e.target.value)}
+            placeholder="Enter reason…"
+            autoFocus
+            className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary"
+          />
+        )}
+        <div className="flex gap-2">
+          <button onClick={onCancel}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:bg-secondary transition-all">
+            Cancel
+          </button>
+          <button onClick={() => reason && onConfirm(reason)} disabled={!reason}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40 hover:opacity-90 transition-all">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -92,19 +143,18 @@ function FinePopover({ dancerId, dancerName, onClose }: { dancerId: string; danc
 }
 
 // ── On-Stage card ─────────────────────────────────────────────────────────────
-function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, onPause, onReset }:
-  { entry: StageEntry; paused: boolean; secondsUntilNext: number; onAdvance: () => void; onOffStage: () => void; onPause: () => void; onReset: () => void }) {
+function OnStageCard({ entry, secondsUntilNext, onAdvance, onOffStage, onSkip }:
+  { entry: StageEntry; secondsUntilNext: number; onAdvance: () => void; onOffStage: () => void; onSkip: () => void }) {
   const elapsed = useElapsed(entry.startTime);
 
-  // Beep when < 60s remaining (once per transition)
   const beeped = useRef(false);
   useEffect(() => {
-    if (secondsUntilNext <= 60 && !paused && !beeped.current) {
+    if (secondsUntilNext <= 60 && !beeped.current) {
       playBeep(660, 0.3);
       beeped.current = true;
     }
     if (secondsUntilNext > 60) beeped.current = false;
-  }, [secondsUntilNext, paused]);
+  }, [secondsUntilNext]);
 
   return (
     <div className="bg-white rounded-2xl border-2 border-green-400 p-5 shadow-sm">
@@ -123,17 +173,12 @@ function OnStageCard({ entry, paused, secondsUntilNext, onAdvance, onOffStage, o
             )}
           </div>
         </div>
-        <CountdownRing seconds={secondsUntilNext} paused={paused} />
+        <CountdownRing seconds={secondsUntilNext} />
       </div>
       <div className="flex flex-wrap gap-2 mt-4">
-        <button onClick={onPause}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${paused ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}>
-          {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-          {paused ? "Resume" : "Pause"}
-        </button>
-        <button onClick={onReset}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:border-primary/50 transition-all">
-          <RotateCcw className="w-4 h-4" /> Reset Timer
+        <button onClick={onSkip}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 text-sm font-medium transition-all">
+          <SkipForward className="w-4 h-4" /> Skip Dancer
         </button>
         <div className="flex-1" />
         <button onClick={onOffStage}
@@ -164,7 +209,7 @@ function EmptyStageCard({ onStart, queue, onPutOnStage }: {
         </div>
         <button onClick={onStart}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-90 transition-all">
-          <Play className="w-3.5 h-3.5" /> Auto-Start Rotation
+          <SkipForward className="w-3.5 h-3.5" /> Auto-Start Rotation
         </button>
       </div>
       {queue.length > 0 && (
@@ -189,17 +234,18 @@ function QueueRow({
   entry, index, onRemove, onFine, onDragStart, onDragOver, onDrop, dragging,
 }: {
   entry: StageEntry; index: number;
-  onRemove: () => void; onFine: () => void;
+  onRemove: (reason: string) => void; onFine: () => void;
   onDragStart: (i: number) => void;
   onDragOver:  (i: number) => void;
   onDrop:      () => void;
   dragging:    number | null;
 }) {
-  const isDragging   = dragging === index;
-  const [showFine, setShowFine] = useState(false);
-  const graceSeconds = useRoomGrace(entry.dancerId);
-  const isNextUp     = index === 0;
-  const isLate       = isNextUp && graceSeconds === null && !entry.inRoom;
+  const isDragging    = dragging === index;
+  const [showFine,   setShowFine]   = useState(false);
+  const [showRemove, setShowRemove] = useState(false);
+  const graceSeconds  = useRoomGrace(entry.dancerId);
+  const isNextUp      = index === 0;
+  const isLate        = isNextUp && graceSeconds === null && !entry.inRoom;
 
   return (
     <div className="relative">
@@ -256,7 +302,7 @@ function QueueRow({
         </button>
 
         {/* Remove */}
-        <button onClick={onRemove}
+        <button onClick={() => setShowRemove(true)}
           className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
           title="Remove from queue">
           <UserMinus className="w-3.5 h-3.5" />
@@ -271,6 +317,58 @@ function QueueRow({
           onClose={() => setShowFine(false)}
         />
       )}
+
+      {/* Remove reason modal */}
+      {showRemove && (
+        <ReasonModal
+          title={`Remove ${entry.dancerName}`}
+          reasons={REMOVE_REASONS}
+          onConfirm={reason => { onRemove(reason); setShowRemove(false); }}
+          onCancel={() => setShowRemove(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Stage history panel ───────────────────────────────────────────────────────
+function StageHistoryPanel({ history }: { history: StageHistoryEntry[] }) {
+  const endReasonStyle = (r: StageHistoryEntry["endReason"]) =>
+    r === "completed" ? "bg-green-100 text-green-700" :
+    r === "skipped"   ? "bg-amber-100 text-amber-700" :
+                        "bg-red-100 text-red-700";
+
+  const dotColor = (r: StageHistoryEntry["endReason"]) =>
+    r === "completed" ? "bg-green-500" : r === "skipped" ? "bg-amber-400" : "bg-red-400";
+
+  return (
+    <div className="bg-white rounded-2xl border border-border p-5 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <History className="w-4 h-4 text-muted-foreground" />
+        <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Stage History Tonight</h3>
+        <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground text-[10px] font-bold">{history.length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {history.map(h => (
+          <div key={h.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary/40 border border-border">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor(h.endReason)}`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate">{h.dancerName}</p>
+              {h.skipReason && (
+                <p className="text-xs text-muted-foreground">
+                  {h.endReason === "skipped" ? "Skipped" : "Removed"}: {h.skipReason}
+                </p>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground font-mono shrink-0">
+              {Math.floor(h.durationSeconds / 60)}:{String(h.durationSeconds % 60).padStart(2, "0")}
+            </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 capitalize ${endReasonStyle(h.endReason)}`}>
+              {h.endReason}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -278,35 +376,51 @@ function QueueRow({
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export function StageManagementTab() {
   const {
-    current, queue, paused, secondsUntilNext, fines,
+    current, queue, secondsUntilNext, fines, stageHistory,
     advanceQueue, offStageEarly, removeFromQueue, reorderQueue,
-    setFullQueue, togglePause, resetTimer, putOnStage, notifyRoomExit, clearFines,
+    setFullQueue, skipDancer, putOnStage, notifyRoomExit, clearFines,
   } = useStage();
+
+  const [showSkipModal, setShowSkipModal] = useState(false);
 
   const todayStr = today();
   const { data: attendance    = [] } = useAttendanceLogs(todayStr, todayStr);
   const { data: roomSessions  = [] } = useActiveRoomSessions();
   const { data: activeDancers = [] } = useActiveDancers();
 
-  // Track room exits — when a session disappears from active, notify grace period
+  // Track room session changes — push newly-in-room dancers to back; notify grace on exit
   const prevRoomIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const currentIds = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+
+    // Dancer entered a room → move them to the back of the queue
+    const newlyEntered: string[] = [];
+    currentIds.forEach(id => {
+      if (!prevRoomIdsRef.current.has(id)) newlyEntered.push(id);
+    });
+    if (newlyEntered.length > 0) {
+      setFullQueue(prev => {
+        const entering = new Set(newlyEntered);
+        const front = prev.filter(e => !entering.has(e.dancerId));
+        const back  = prev.filter(e =>  entering.has(e.dancerId));
+        return [...front, ...back];
+      });
+    }
+
+    // Dancer left a room → start grace period if they're next
     prevRoomIdsRef.current.forEach(id => {
       if (!currentIds.has(id)) {
-        // Dancer just left their room session
         const isNextInQueue = queue[0]?.dancerId === id;
-        if (isNextInQueue) {
-          notifyRoomExit(id);
-        }
+        if (isNextInQueue) notifyRoomExit(id);
       }
     });
-    prevRoomIdsRef.current = currentIds;
-  }, [roomSessions, queue, notifyRoomExit]);
 
-  const inRoomIds         = new Set(roomSessions.map((s: any) => s.dancer_id as string));
-  const currentWithRoom   = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;
-  const queueWithRoom     = queue.map(e => ({ ...e, inRoom: inRoomIds.has(e.dancerId) }));
+    prevRoomIdsRef.current = currentIds;
+  }, [roomSessions, queue, notifyRoomExit, setFullQueue]);
+
+  const inRoomIds       = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+  const currentWithRoom = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;
+  const queueWithRoom   = queue.map(e => ({ ...e, inRoom: inRoomIds.has(e.dancerId) }));
 
   const dragFrom = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -345,12 +459,15 @@ export function StageManagementTab() {
           inRoom:     inRoom.has(d.id),
         }));
     }
-    setFullQueue(entries);
+    // In-room dancers go to the back so they don't block the rotation
+    const notInRoom = entries.filter(e => !e.inRoom);
+    const inRoom    = entries.filter(e =>  e.inRoom);
+    setFullQueue([...notInRoom, ...inRoom]);
   }, [attendance, activeDancers, roomSessions, current, setFullQueue]);
 
-  const presentStatuses  = new Set(["available", "on_stage", "queued", "in_room"]);
-  const checkedInCount   = attendance.length || activeDancers.filter(d => d.live_status && presentStatuses.has(d.live_status)).length;
-  const inRoomCount      = roomSessions.length;
+  const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
+  const checkedInCount  = attendance.length || activeDancers.filter(d => d.live_status && presentStatuses.has(d.live_status)).length;
+  const inRoomCount     = roomSessions.length;
 
   return (
     <div className="space-y-5">
@@ -383,15 +500,23 @@ export function StageManagementTab() {
       {currentWithRoom ? (
         <OnStageCard
           entry={currentWithRoom}
-          paused={paused}
           secondsUntilNext={secondsUntilNext}
           onAdvance={advanceQueue}
           onOffStage={offStageEarly}
-          onPause={togglePause}
-          onReset={resetTimer}
+          onSkip={() => setShowSkipModal(true)}
         />
       ) : (
         <EmptyStageCard onStart={buildQueue} queue={queueWithRoom} onPutOnStage={putOnStage} />
+      )}
+
+      {/* ── Skip reason modal ────────────────────────────────────────────── */}
+      {showSkipModal && (
+        <ReasonModal
+          title={`Skip ${currentWithRoom?.dancerName ?? "Dancer"}`}
+          reasons={SKIP_REASONS}
+          onConfirm={reason => { skipDancer(reason); setShowSkipModal(false); }}
+          onCancel={() => setShowSkipModal(false)}
+        />
       )}
 
       {/* ── Queue ───────────────────────────────────────────────────────── */}
@@ -407,7 +532,7 @@ export function StageManagementTab() {
                 key={entry.dancerId}
                 entry={entry}
                 index={i}
-                onRemove={() => removeFromQueue(entry.dancerId)}
+                onRemove={reason => removeFromQueue(entry.dancerId, reason)}
                 onFine={() => {}}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
@@ -457,6 +582,9 @@ export function StageManagementTab() {
           </div>
         </div>
       )}
+
+      {/* ── Stage history ────────────────────────────────────────────────── */}
+      {stageHistory.length > 0 && <StageHistoryPanel history={stageHistory} />}
 
       {/* ── Legend ──────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1">

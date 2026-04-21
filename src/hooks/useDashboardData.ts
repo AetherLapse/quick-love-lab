@@ -207,7 +207,7 @@ export function useDancerBalancesToday() {
       const [{ data: logs }, { data: roomSessions }] = await Promise.all([
         supabase
           .from("attendance_log")
-          .select("id, dancer_id, entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, dancers(stage_name)")
+          .select("id, dancer_id, entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, dancers(stage_name)")
           .eq("shift_date", dateStr)
           .is("clock_out", null),
         supabase

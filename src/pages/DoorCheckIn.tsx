@@ -5,7 +5,7 @@ import {
   DoorOpen, Users, BedDouble, Loader2, DollarSign, Check,
 } from "lucide-react";
 import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
-import { useStage, useElapsed } from "@/contexts/StageContext";
+import { useStage } from "@/contexts/StageContext";
 import { toast } from "sonner";
 import DancerCheckInTab from "@/components/door/DancerCheckInTab";
 import { RoomsPanel } from "@/pages/PrivateRooms";
@@ -335,8 +335,6 @@ function StageStatusStrip({
   queue: StageEntry[];
   onNext: () => void;
 }) {
-  const elapsed = useElapsed(current?.startTime ?? null);
-
   return (
     <div className="flex flex-wrap items-center gap-2 mb-3">
       {/* On Stage pill */}
@@ -345,7 +343,7 @@ function StageStatusStrip({
           <Mic2 className="w-4 h-4 text-green-600 shrink-0" />
           <div>
             <p className="text-[10px] text-green-700 font-bold uppercase tracking-wider leading-none">On Stage</p>
-            <p className="text-sm font-bold text-green-800 leading-none">{current.dancerName} · {elapsed}</p>
+            <p className="text-sm font-bold text-green-800 leading-none">{current.dancerName}</p>
           </div>
           <button
             onClick={onNext}
@@ -366,13 +364,12 @@ function StageStatusStrip({
 }
 
 function QueueEntryPill({ entry, position }: { entry: StageEntry; position: number }) {
-  const elapsed = useElapsed(entry.startTime);
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-50 border-2 border-yellow-300 animate-pulse">
       <Clock className="w-3.5 h-3.5 text-yellow-600 shrink-0" />
       <div>
         <p className="text-[10px] text-yellow-700 font-bold uppercase tracking-wider leading-none">Queue #{position}</p>
-        <p className="text-sm font-bold text-yellow-800 leading-none">{entry.dancerName} · {elapsed}</p>
+        <p className="text-sm font-bold text-yellow-800 leading-none">{entry.dancerName}</p>
       </div>
     </div>
   );
@@ -716,12 +713,16 @@ function DancerBalancesPanel() {
                   </div>
                 </div>
 
-                {/* Fee breakdown — music fee covered first, then house fee */}
+                {/* Fee breakdown — room earnings settle house fee, cash covers music first then remaining house */}
                 {(() => {
-                  const musicPaid = Math.min(b.amountPaid, b.musicFee);
-                  const housePaid = Math.max(0, b.amountPaid - b.musicFee);
-                  const musicDone = musicPaid >= b.musicFee;
-                  const houseDone = housePaid >= b.houseFee;
+                  // Room earnings offset house fee directly
+                  const roomSettled     = Math.min(b.roomCut, b.houseFee);
+                  const houseAfterRoom  = Math.max(0, b.houseFee - roomSettled);
+                  // Cash: music first, then remaining house fee
+                  const musicPaid       = Math.min(b.amountPaid, b.musicFee);
+                  const cashForHouse    = Math.max(0, b.amountPaid - b.musicFee);
+                  const musicDone       = musicPaid >= b.musicFee;
+                  const houseDone       = cashForHouse >= houseAfterRoom;
                   return (
                     <div className="space-y-1 px-1">
                       {/* Music Fee row */}
@@ -747,12 +748,17 @@ function DancerBalancesPanel() {
                           </span>
                           {houseDone && <span className="text-[9px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">PAID</span>}
                         </div>
-                        <span className={`font-medium ${houseDone ? "line-through text-green-500" : "text-foreground"}`}>
-                          {fmtCur(b.houseFee)}
-                          {housePaid > 0 && !houseDone && (
-                            <span className="text-blue-500 ml-1">(−{fmtCur(housePaid)})</span>
+                        <div className="flex items-center gap-1 font-medium">
+                          <span className={houseDone ? "line-through text-green-500" : "text-foreground"}>
+                            {fmtCur(b.houseFee)}
+                          </span>
+                          {roomSettled > 0 && (
+                            <span className="text-purple-500 text-[10px]">(−{fmtCur(roomSettled)} room)</span>
                           )}
-                        </span>
+                          {cashForHouse > 0 && !houseDone && (
+                            <span className="text-blue-500 text-[10px]">(−{fmtCur(cashForHouse)} cash)</span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Fine row */}

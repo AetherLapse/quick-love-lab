@@ -16,30 +16,42 @@ export type Database = {
     Tables: {
       attendance_log: {
         Row: {
+          amount_paid: number
           clock_in: string
           clock_out: string | null
           created_at: string
           dancer_id: string
+          early_leave_fine: number
           entrance_fee_amount: number
+          fine_waived: boolean
           id: string
+          payment_status: string
           shift_date: string
         }
         Insert: {
+          amount_paid?: number
           clock_in?: string
           clock_out?: string | null
           created_at?: string
           dancer_id: string
+          early_leave_fine?: number
           entrance_fee_amount?: number
+          fine_waived?: boolean
           id?: string
+          payment_status?: string
           shift_date?: string
         }
         Update: {
+          amount_paid?: number
           clock_in?: string
           clock_out?: string | null
           created_at?: string
           dancer_id?: string
+          early_leave_fine?: number
           entrance_fee_amount?: number
+          fine_waived?: boolean
           id?: string
+          payment_status?: string
           shift_date?: string
         }
         Relationships: [

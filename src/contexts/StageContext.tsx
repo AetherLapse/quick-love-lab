@@ -16,25 +16,35 @@ export interface StageFine {
   issuedAt:   Date;
 }
 
+export interface StageHistoryEntry {
+  id:              string;
+  dancerId:        string;
+  dancerName:      string;
+  startTime:       Date;
+  endTime:         Date;
+  durationSeconds: number;
+  endReason:       "completed" | "skipped" | "removed";
+  skipReason?:     string;
+}
+
 const AUTO_ADVANCE_SECS  = 600; // 10 minutes
 const ROOM_GRACE_SECS    = 120; // 2 minutes grace after room session
 
 interface StageContextType {
   current:          StageEntry | null;
   queue:            StageEntry[];
-  paused:           boolean;
   secondsUntilNext: number;
   fines:            StageFine[];
-  roomExitTimes:    Record<string, Date>;   // dancerId → when they left the room
+  stageHistory:     StageHistoryEntry[];
+  roomExitTimes:    Record<string, Date>;
   putOnStage:       (dancerId: string, dancerName: string) => void;
   addToQueue:       (dancerId: string, dancerName: string) => void;
   advanceQueue:     () => void;
   offStageEarly:    () => void;
-  removeFromQueue:  (dancerId: string) => void;
+  removeFromQueue:  (dancerId: string, reason?: string) => void;
   reorderQueue:     (fromIdx: number, toIdx: number) => void;
   setFullQueue:     (entries: StageEntry[]) => void;
-  togglePause:      () => void;
-  resetTimer:       () => void;
+  skipDancer:       (reason: string) => void;
   clearStage:       () => void;
   issueFine:        (dancerId: string, dancerName: string, reason: string, amount: number) => void;
   notifyRoomExit:   (dancerId: string) => void;
@@ -46,22 +56,33 @@ const StageContext = createContext<StageContextType | undefined>(undefined);
 export function StageProvider({ children }: { children: ReactNode }) {
   const [current,          setCurrent]          = useState<StageEntry | null>(null);
   const [queue,            setQueue]            = useState<StageEntry[]>([]);
-  const [paused,           setPaused]           = useState(false);
   const [secondsUntilNext, setSecondsUntilNext] = useState(AUTO_ADVANCE_SECS);
   const [fines,            setFines]            = useState<StageFine[]>([]);
+  const [stageHistory,     setStageHistory]     = useState<StageHistoryEntry[]>([]);
   const [roomExitTimes,    setRoomExitTimes]    = useState<Record<string, Date>>({});
 
-  const pausedRef  = useRef(paused);
   const currentRef = useRef(current);
-  pausedRef.current  = paused;
   currentRef.current = current;
 
   // ── Auto-advance countdown ─────────────────────────────────────────────────
   useEffect(() => {
     const id = setInterval(() => {
-      if (pausedRef.current || !currentRef.current) return;
+      if (!currentRef.current) return;
       setSecondsUntilNext(s => {
         if (s <= 1) {
+          const finished = currentRef.current;
+          if (finished) {
+            const endTime = new Date();
+            setStageHistory(prev => [{
+              id:              crypto.randomUUID(),
+              dancerId:        finished.dancerId,
+              dancerName:      finished.dancerName,
+              startTime:       finished.startTime,
+              endTime,
+              durationSeconds: Math.round((endTime.getTime() - finished.startTime.getTime()) / 1000),
+              endReason:       "completed",
+            }, ...prev]);
+          }
           setQueue(prev => {
             const [next, ...rest] = prev;
             if (next) setCurrent({ ...next, startTime: new Date() });
@@ -81,7 +102,6 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setCurrent({ dancerId, dancerName, startTime: new Date() });
     setQueue(prev => prev.filter(e => e.dancerId !== dancerId));
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
-    // Clear room exit time once on stage
     setRoomExitTimes(prev => { const n = { ...prev }; delete n[dancerId]; return n; });
   }, []);
 
@@ -106,8 +126,48 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
   }, []);
 
-  const removeFromQueue  = useCallback((dancerId: string) =>
-    setQueue(prev => prev.filter(e => e.dancerId !== dancerId)), []);
+  const removeFromQueue = useCallback((dancerId: string, reason?: string) => {
+    setQueue(prev => {
+      const entry = prev.find(e => e.dancerId === dancerId);
+      if (entry && reason) {
+        const endTime = new Date();
+        setStageHistory(h => [{
+          id:              crypto.randomUUID(),
+          dancerId:        entry.dancerId,
+          dancerName:      entry.dancerName,
+          startTime:       entry.startTime,
+          endTime,
+          durationSeconds: Math.round((endTime.getTime() - entry.startTime.getTime()) / 1000),
+          endReason:       "removed",
+          skipReason:      reason,
+        }, ...h]);
+      }
+      return prev.filter(e => e.dancerId !== dancerId);
+    });
+  }, []);
+
+  const skipDancer = useCallback((reason: string) => {
+    const prev = currentRef.current;
+    if (prev) {
+      const endTime = new Date();
+      setStageHistory(h => [{
+        id:              crypto.randomUUID(),
+        dancerId:        prev.dancerId,
+        dancerName:      prev.dancerName,
+        startTime:       prev.startTime,
+        endTime,
+        durationSeconds: Math.round((endTime.getTime() - prev.startTime.getTime()) / 1000),
+        endReason:       "skipped",
+        skipReason:      reason,
+      }, ...h]);
+    }
+    setQueue(q => {
+      const [next, ...rest] = q;
+      setCurrent(next ? { ...next, startTime: new Date() } : null);
+      return rest;
+    });
+    setSecondsUntilNext(AUTO_ADVANCE_SECS);
+  }, []);
 
   const reorderQueue = useCallback((fromIdx: number, toIdx: number) => {
     setQueue(prev => {
@@ -120,9 +180,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const setFullQueue = useCallback((entries: StageEntry[]) => setQueue(entries), []);
 
-  const togglePause = useCallback(() => setPaused(p => !p), []);
-  const resetTimer  = useCallback(() => setSecondsUntilNext(AUTO_ADVANCE_SECS), []);
-  const clearStage  = useCallback(() => setCurrent(null), []);
+  const clearStage = useCallback(() => setCurrent(null), []);
 
   const issueFine = useCallback((dancerId: string, dancerName: string, reason: string, amount: number) => {
     setFines(prev => [{
@@ -140,9 +198,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   return (
     <StageContext.Provider value={{
-      current, queue, paused, secondsUntilNext, fines, roomExitTimes,
+      current, queue, secondsUntilNext, fines, stageHistory, roomExitTimes,
       putOnStage, addToQueue, advanceQueue, offStageEarly, removeFromQueue,
-      reorderQueue, setFullQueue, togglePause, resetTimer, clearStage,
+      reorderQueue, setFullQueue, skipDancer, clearStage,
       issueFine, notifyRoomExit, clearFines,
     }}>
       {children}

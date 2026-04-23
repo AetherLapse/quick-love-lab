@@ -16,7 +16,7 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 // TODO: make configurable by Super Admin
 const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["Private Room"] },
+  { floor: "Floor 1", rooms: ["Private Room 1", "Private Room 2"] },
 ];
 
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }

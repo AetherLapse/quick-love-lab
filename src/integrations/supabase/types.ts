@@ -488,6 +488,36 @@ export type Database = {
           },
         ]
       }
+      staff_attendance: {
+        Row: {
+          id:         string
+          profile_id: string
+          role:       string
+          shift_date: string
+          clock_in:   string
+          clock_out:  string | null
+          created_at: string
+        }
+        Insert: {
+          id?:        string
+          profile_id: string
+          role:       string
+          shift_date?: string
+          clock_in?:  string
+          clock_out?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?:        string
+          profile_id?: string
+          role?:      string
+          shift_date?: string
+          clock_in?:  string
+          clock_out?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -533,7 +563,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom"
+      app_role: "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "bartender" | "dj"
       dancer_event_type:
         | "check_in"
         | "room_session"
@@ -669,7 +699,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "manager", "door_staff", "room_attendant"],
+      app_role: ["admin", "manager", "door_staff", "room_attendant", "house_mom", "bartender", "dj"],
       dancer_event_type: [
         "check_in",
         "room_session",

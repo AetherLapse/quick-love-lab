@@ -664,9 +664,9 @@ export function SettingsTab() {
     setStaffSaving(true);
 
     if (staffEditId && staffEditUserId) {
-      // Edit: update profile name + role (+ PIN if door_staff)
+      // Edit: update profile name + role + PIN (available for all roles)
       const profileUpdate: Record<string, unknown> = { full_name: staffForm.full_name.trim() };
-      if (staffForm.role === "door_staff" && staffForm.pin_code.trim()) {
+      if (staffForm.pin_code.trim()) {
         profileUpdate.pin_code = staffForm.pin_code.trim();
       }
       const [profileRes, roleRes] = await Promise.all([
@@ -690,7 +690,7 @@ export function SettingsTab() {
             password: staffForm.password,
             full_name: staffForm.full_name.trim(),
             role: staffForm.role,
-            ...(staffForm.role === "door_staff" && staffForm.pin_code.trim() ? { pin_code: staffForm.pin_code.trim() } : {}),
+            ...(staffForm.pin_code.trim() ? { pin_code: staffForm.pin_code.trim() } : {}),
           },
         });
         setStaffSaving(false);
@@ -1129,24 +1129,24 @@ export function SettingsTab() {
               >
                 <option value="door_staff">Door Staff</option>
                 <option value="room_attendant">Room Attendant</option>
+                <option value="bartender">Bartender</option>
+                <option value="dj">DJ</option>
                 <option value="manager">Manager</option>
               </select>
             </div>
 
-            {staffForm.role === "door_staff" && (
-              <div>
-                <Label>Door Staff PIN</Label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={8}
-                  value={staffForm.pin_code}
-                  onChange={(e) => setStaffForm({ ...staffForm, pin_code: e.target.value.replace(/\D/g, "") })}
-                  placeholder="Enter PIN (digits only)"
-                  className="bg-secondary mt-1"
-                />
-              </div>
-            )}
+            <div>
+              <Label>Staff PIN <span className="text-muted-foreground text-xs font-normal">(for PIN login)</span></Label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                maxLength={8}
+                value={staffForm.pin_code}
+                onChange={(e) => setStaffForm({ ...staffForm, pin_code: e.target.value.replace(/\D/g, "") })}
+                placeholder="4–8 digits"
+                className="bg-secondary mt-1"
+              />
+            </div>
 
             <Button onClick={handleSaveStaff} disabled={staffSaving} className="w-full py-3">
               {staffSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</> : staffEditId ? "Save Changes" : "Add Staff Member"}

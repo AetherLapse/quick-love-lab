@@ -30,6 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     clearTimer();
+    // Record clock-out for any open staff attendance record today
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles").select("id").eq("user_id", user.id).maybeSingle();
+      if (profile) {
+        const today = new Date().toISOString().split("T")[0];
+        await supabase.from("staff_attendance")
+          .update({ clock_out: new Date().toISOString() })
+          .eq("profile_id", profile.id)
+          .eq("shift_date", today)
+          .is("clock_out", null);
+      }
+    }
     await supabase.auth.signOut();
     setUser(null);
     setRole(null);
@@ -79,9 +92,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
+      // Hold loading=true until the role is resolved so RequireRole never
+      // sees a logged-in user with role=null and bounces them to /login.
+      setLoading(true);
       supabase.from("user_roles").select("role")
         .eq("user_id", nextUser.id).maybeSingle()
-        .then(({ data }) => setRole(data?.role ?? null));
+        .then(({ data }) => {
+          setRole(data?.role ?? null);
+          setLoading(false);
+        });
     });
 
     return () => subscription.unsubscribe();

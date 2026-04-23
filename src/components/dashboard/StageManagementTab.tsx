@@ -434,8 +434,8 @@ export function StageManagementTab() {
     dragFrom.current = null; setDragOver(null);
   };
 
-  const buildQueue = useCallback(() => {
-    const inRoom = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+  const buildEntries = useCallback((): StageEntry[] => {
+    const inRoomSet = new Set(roomSessions.map((s: any) => s.dancer_id as string));
     let entries: StageEntry[];
     if (attendance.length > 0) {
       entries = [...attendance]
@@ -445,7 +445,7 @@ export function StageManagementTab() {
           dancerId:   a.dancer_id,
           dancerName: (a.dancers as any)?.stage_name ?? "Dancer",
           startTime:  new Date(),
-          inRoom:     inRoom.has(a.dancer_id),
+          inRoom:     inRoomSet.has(a.dancer_id),
         }));
     } else {
       const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
@@ -456,14 +456,24 @@ export function StageManagementTab() {
           dancerId:   d.id,
           dancerName: d.stage_name,
           startTime:  new Date(),
-          inRoom:     inRoom.has(d.id),
+          inRoom:     inRoomSet.has(d.id),
         }));
     }
-    // In-room dancers go to the back so they don't block the rotation
-    const notInRoom = entries.filter(e => !e.inRoom);
-    const inRoom    = entries.filter(e =>  e.inRoom);
-    setFullQueue([...notInRoom, ...inRoom]);
-  }, [attendance, activeDancers, roomSessions, current, setFullQueue]);
+    // In-room dancers always go to the back
+    return [...entries.filter(e => !e.inRoom), ...entries.filter(e => e.inRoom)];
+  }, [attendance, activeDancers, roomSessions, current]);
+
+  const buildQueue = useCallback(() => {
+    setFullQueue(buildEntries());
+  }, [buildEntries, setFullQueue]);
+
+  const startRotation = useCallback(() => {
+    const entries = buildEntries();
+    if (entries.length === 0) { toast.error("No dancers checked in"); return; }
+    const [first, ...rest] = entries;
+    putOnStage(first.dancerId, first.dancerName);
+    setFullQueue(rest);
+  }, [buildEntries, putOnStage, setFullQueue]);
 
   const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
   const checkedInCount  = attendance.length || activeDancers.filter(d => d.live_status && presentStatuses.has(d.live_status)).length;
@@ -506,7 +516,7 @@ export function StageManagementTab() {
           onSkip={() => setShowSkipModal(true)}
         />
       ) : (
-        <EmptyStageCard onStart={buildQueue} queue={queueWithRoom} onPutOnStage={putOnStage} />
+        <EmptyStageCard onStart={startRotation} queue={queueWithRoom} onPutOnStage={putOnStage} />
       )}
 
       {/* ── Skip reason modal ────────────────────────────────────────────── */}

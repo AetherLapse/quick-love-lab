@@ -635,8 +635,8 @@ function EditStaffModal({ member, onClose, onSuccess }: {
     const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: member.user_id, role });
     if (roleErr) { setSaving(false); toast.error(roleErr.message); return; }
 
-    // Save PIN for door_staff
-    if (role === "door_staff" && pinCode.trim()) {
+    // Save PIN — available for all roles
+    if (pinCode.trim()) {
       await supabase.from("profiles").update({ pin_code: pinCode.trim() }).eq("user_id", member.user_id);
     }
 
@@ -698,21 +698,19 @@ function EditStaffModal({ member, onClose, onSuccess }: {
           </div>
         </div>
 
-        {/* Door Staff PIN */}
-        {role === "door_staff" && (
-          <div className="space-y-1.5">
-            <Label>Door Staff PIN</Label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              maxLength={8}
-              value={pinCode}
-              onChange={e => setPinCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="Enter PIN (digits only)"
-              className="bg-white"
-            />
-          </div>
-        )}
+        {/* Staff PIN — used for quick PIN login */}
+        <div className="space-y-1.5">
+          <Label>Staff PIN <span className="text-muted-foreground text-xs font-normal">(for PIN login)</span></Label>
+          <Input
+            type="text"
+            inputMode="numeric"
+            maxLength={8}
+            value={pinCode}
+            onChange={e => setPinCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="4–8 digits"
+            className="bg-white"
+          />
+        </div>
 
         {/* Set Password */}
         <div className="rounded-xl border border-border bg-secondary/30 p-4 space-y-2">

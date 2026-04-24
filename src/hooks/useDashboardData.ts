@@ -181,7 +181,19 @@ export function usePresentDancersToday() {
   });
 }
 
-const MUSIC_FEE_PER_SHIFT = 20;
+export const MUSIC_FEE_PER_SHIFT   = 20;
+export const LATE_ARRIVAL_FEE      = 20;
+export const LATE_ARRIVAL_CUTOFF_H = 20; // 8 PM hour
+export const LATE_ARRIVAL_CUTOFF_M = 30; // :30
+
+/** Returns the late arrival fee if current time is at or after 8:30 PM, else 0 */
+export function calcLateArrivalFee(): number {
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  return (h > LATE_ARRIVAL_CUTOFF_H || (h === LATE_ARRIVAL_CUTOFF_H && m >= LATE_ARRIVAL_CUTOFF_M))
+    ? LATE_ARRIVAL_FEE
+    : 0;
+}
 
 export interface DancerBalance {
   attendanceId: string;
@@ -189,6 +201,7 @@ export interface DancerBalance {
   stageName: string;
   houseFee: number;
   musicFee: number;
+  lateArrivalFee: number;
   fines: number;
   roomCut: number;
   totalDue: number;
@@ -207,7 +220,7 @@ export function useDancerBalancesToday() {
       const [{ data: logs }, { data: roomSessions }] = await Promise.all([
         supabase
           .from("attendance_log")
-          .select("id, dancer_id, entrance_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, dancers(stage_name)")
+          .select("id, dancer_id, entrance_fee_amount, late_arrival_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, dancers(stage_name)")
           .eq("shift_date", dateStr)
           .is("clock_out", null),
         supabase
@@ -227,17 +240,19 @@ export function useDancerBalancesToday() {
       for (const log of logs ?? []) {
         if (seen.has(log.dancer_id)) continue;
         seen.add(log.dancer_id);
-        const houseFee = Number(log.entrance_fee_amount ?? 0);
-        const fines    = log.fine_waived ? 0 : Number((log as any).early_leave_fine ?? 0);
-        const roomCut  = cutByDancer[log.dancer_id] ?? 0;
-        const totalDue = houseFee + MUSIC_FEE_PER_SHIFT + fines - roomCut;
-        const amountPaid = Number((log as any).amount_paid ?? 0);
+        const houseFee       = Number(log.entrance_fee_amount ?? 0);
+        const lateArrivalFee = Number((log as any).late_arrival_fee_amount ?? 0);
+        const fines          = log.fine_waived ? 0 : Number((log as any).early_leave_fine ?? 0);
+        const roomCut        = cutByDancer[log.dancer_id] ?? 0;
+        const totalDue       = houseFee + MUSIC_FEE_PER_SHIFT + lateArrivalFee + fines - roomCut;
+        const amountPaid     = Number((log as any).amount_paid ?? 0);
         result.push({
           attendanceId:  log.id,
           dancerId:      log.dancer_id,
           stageName:     (log as any).dancers?.stage_name ?? "Unknown",
           houseFee,
           musicFee:      MUSIC_FEE_PER_SHIFT,
+          lateArrivalFee,
           fines,
           roomCut,
           totalDue,
@@ -711,11 +726,13 @@ export function useDancerCheckIn() {
     mutationFn: async ({
       dancerId,
       entranceFee,
+      lateArrivalFee = 0,
       method,
       authorId,
     }: {
       dancerId: string;
       entranceFee: number;
+      lateArrivalFee?: number;
       method: "pin" | "facial";
       authorId: string;
     }) => {
@@ -732,7 +749,12 @@ export function useDancerCheckIn() {
       // Insert attendance log — select id so caller can record payment immediately
       const { data: attRow, error: attErr } = await supabase
         .from("attendance_log")
-        .insert({ dancer_id: dancerId, entrance_fee_amount: entranceFee, shift_date: today() })
+        .insert({
+          dancer_id: dancerId,
+          entrance_fee_amount: entranceFee,
+          late_arrival_fee_amount: lateArrivalFee,
+          shift_date: today(),
+        } as any)
         .select("id")
         .single();
       if (attErr) throw attErr;
@@ -741,7 +763,7 @@ export function useDancerCheckIn() {
       await supabase.from("dancer_event_log").insert({
         dancer_id: dancerId,
         event_type: "check_in",
-        payload: { method, house_fee_applied: entranceFee },
+        payload: { method, house_fee_applied: entranceFee, late_arrival_fee: lateArrivalFee },
         author_id: authorId,
       });
 

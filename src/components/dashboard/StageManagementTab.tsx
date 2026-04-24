@@ -2,10 +2,11 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import {
   Mic2, SkipForward, GripVertical,
   UserMinus, RefreshCw, Clock, BedDouble, ArrowUpFromLine, ArrowDownToLine,
-  DollarSign, AlertTriangle, X, Trash2, History,
+  DollarSign, AlertTriangle, X, Trash2, History, Delete, Loader2, KeyRound,
 } from "lucide-react";
 import { useStage, useElapsed, useRoomGrace, type StageEntry, type StageHistoryEntry } from "@/contexts/StageContext";
 import { useAttendanceLogs, useActiveRoomSessions, useActiveDancers, today } from "@/hooks/useDashboardData";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 // ── Audio beep ────────────────────────────────────────────────────────────────
@@ -41,6 +42,96 @@ function CountdownRing({ seconds, total = 600 }: { seconds: number; total?: numb
       </text>
       <text x="44" y="55" textAnchor="middle" fontSize="9" fill="#94a3b8">NEXT</text>
     </svg>
+  );
+}
+
+// ── PIN verification modal ────────────────────────────────────────────────────
+function PinVerifyModal({ title, onVerified, onCancel }: {
+  title:      string;
+  onVerified: () => void;
+  onCancel:   () => void;
+}) {
+  const [pin,     setPin]     = useState("");
+  const [error,   setError]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const verify = async () => {
+    if (pin.length < 4) return;
+    setLoading(true);
+    setError(null);
+    // Accept any active staff profile PIN or dancer PIN
+    const [{ data: staff }, { data: dancer }] = await Promise.all([
+      supabase.from("profiles").select("id").eq("pin_code", pin).eq("is_active", true).maybeSingle(),
+      (supabase as any).from("dancers").select("id").eq("pin_code", pin).eq("is_active", true).maybeSingle(),
+    ]);
+    setLoading(false);
+    if (!staff && !dancer) {
+      setError("Incorrect PIN — try again");
+      setPin("");
+      return;
+    }
+    onVerified();
+  };
+
+  const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-primary" />
+            <h3 className="text-base font-bold text-foreground">{title}</h3>
+          </div>
+          <button onClick={onCancel} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center">Enter your PIN to authorise this action</p>
+
+        {/* Dots */}
+        <div className="flex justify-center gap-3 py-1">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${
+              i < pin.length ? "bg-primary border-primary scale-110" : "border-border"
+            }`} />
+          ))}
+        </div>
+
+        {/* Grid */}
+        <div className="grid grid-cols-3 gap-2">
+          {keys.map((k, i) => {
+            if (k === "") return <div key={i} />;
+            if (k === "⌫") return (
+              <button key={i} onClick={() => { setPin(p => p.slice(0, -1)); setError(null); }}
+                className="aspect-square flex items-center justify-center rounded-xl border border-border bg-white hover:bg-secondary text-muted-foreground transition-all shadow-sm">
+                <Delete className="w-4 h-4" />
+              </button>
+            );
+            return (
+              <button key={i} onClick={() => { if (pin.length < 6) { setPin(p => p + k); setError(null); } }}
+                className="aspect-square flex items-center justify-center rounded-xl border border-border bg-white hover:border-primary hover:bg-primary/5 text-foreground text-lg font-bold transition-all shadow-sm active:scale-95">
+                {k}
+              </button>
+            );
+          })}
+        </div>
+
+        {error && <p className="text-xs text-destructive text-center">{error}</p>}
+
+        <div className="flex gap-2">
+          <button onClick={onCancel}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:bg-secondary transition-all">
+            Cancel
+          </button>
+          <button onClick={verify} disabled={pin.length < 4 || loading}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40 hover:opacity-90 transition-all flex items-center justify-center gap-1.5">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -381,6 +472,7 @@ export function StageManagementTab() {
     setFullQueue, skipDancer, putOnStage, notifyRoomExit, clearFines,
   } = useStage();
 
+  const [showSkipPin,   setShowSkipPin]   = useState(false);
   const [showSkipModal, setShowSkipModal] = useState(false);
 
   const todayStr = today();
@@ -399,12 +491,10 @@ export function StageManagementTab() {
       if (!prevRoomIdsRef.current.has(id)) newlyEntered.push(id);
     });
     if (newlyEntered.length > 0) {
-      setFullQueue(prev => {
-        const entering = new Set(newlyEntered);
-        const front = prev.filter(e => !entering.has(e.dancerId));
-        const back  = prev.filter(e =>  entering.has(e.dancerId));
-        return [...front, ...back];
-      });
+      const entering = new Set(newlyEntered);
+      const front = queue.filter((e: StageEntry) => !entering.has(e.dancerId));
+      const back  = queue.filter((e: StageEntry) =>  entering.has(e.dancerId));
+      setFullQueue([...front, ...back]);
     }
 
     // Dancer left a room → start grace period if they're next
@@ -513,13 +603,22 @@ export function StageManagementTab() {
           secondsUntilNext={secondsUntilNext}
           onAdvance={advanceQueue}
           onOffStage={offStageEarly}
-          onSkip={() => setShowSkipModal(true)}
+          onSkip={() => setShowSkipPin(true)}
         />
       ) : (
         <EmptyStageCard onStart={startRotation} queue={queueWithRoom} onPutOnStage={putOnStage} />
       )}
 
-      {/* ── Skip reason modal ────────────────────────────────────────────── */}
+      {/* ── Skip: PIN gate ───────────────────────────────────────────────── */}
+      {showSkipPin && (
+        <PinVerifyModal
+          title="Skip Dancer"
+          onVerified={() => { setShowSkipPin(false); setShowSkipModal(true); }}
+          onCancel={() => setShowSkipPin(false)}
+        />
+      )}
+
+      {/* ── Skip: reason modal ───────────────────────────────────────────── */}
       {showSkipModal && (
         <ReasonModal
           title={`Skip ${currentWithRoom?.dancerName ?? "Dancer"}`}

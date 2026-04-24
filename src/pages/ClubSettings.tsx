@@ -246,7 +246,7 @@ function AddStaffModal({ open, onClose, onSuccess }: {
     if (error || !data.user) {
       setSaving(false); toast.error(error?.message ?? "Account creation failed"); return;
     }
-    const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: data.user.id, role });
+    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ user_id: data.user.id, role });
     setSaving(false);
     if (roleErr) { toast.error(roleErr.message); return; }
     toast.success(`Staff account created for ${name}`);
@@ -366,7 +366,7 @@ function StageNamesSection({
       .eq("dancer_id", dancerId)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
-        setNames((data as StageName[]) ?? []);
+        setNames((data as unknown as StageName[]) ?? []);
         setLoading(false);
       });
   }, [dancerId]);
@@ -632,7 +632,7 @@ function EditStaffModal({ member, onClose, onSuccess }: {
 
     // Update role
     await supabase.from("user_roles").delete().eq("user_id", member.user_id);
-    const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: member.user_id, role });
+    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ user_id: member.user_id, role });
     if (roleErr) { setSaving(false); toast.error(roleErr.message); return; }
 
     // Save PIN — available for all roles
@@ -937,60 +937,6 @@ function StaffPanel() {
   );
 }
 
-// ─── Club settings panel ──────────────────────────────────────────────────────
-function ClubSettingsPanel() {
-  const [songPrice, setSongPrice]     = useState("50");
-  const [doorFee, setDoorFee]         = useState("20");
-  const [dancerFee, setDancerFee]     = useState("50");
-  const [payoutPct, setPayoutPct]     = useState("30");
-  const [settingsId, setSettingsId]   = useState<string | null>(null);
-  const [saving, setSaving]           = useState(false);
-
-  useEffect(() => {
-    supabase.from("club_settings").select("*").single().then(({ data }) => {
-      if (!data) return;
-      setSettingsId(data.id);
-      setSongPrice(String(data.song_price));
-      setDoorFee(String(data.default_door_fee));
-      setDancerFee(String(data.default_dancer_entrance_fee));
-      setPayoutPct(String(data.default_dancer_payout_pct));
-    });
-  }, []);
-
-  const handleSave = async () => {
-    if (!settingsId) return;
-    setSaving(true);
-    const { error } = await supabase.from("club_settings").update({
-      song_price: parseFloat(songPrice), default_door_fee: parseFloat(doorFee),
-      default_dancer_entrance_fee: parseFloat(dancerFee), default_dancer_payout_pct: parseFloat(payoutPct),
-    }).eq("id", settingsId);
-    setSaving(false);
-    if (error) toast.error(error.message); else toast.success("Settings saved");
-  };
-
-  return (
-    <Section icon={<Settings className="w-5 h-5" />} title="Club Settings" subtitle="Configure pricing and payout percentages">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[
-          { label: "Song Price ($)",           val: songPrice,  set: setSongPrice },
-          { label: "Customer Door Fee ($)",     val: doorFee,    set: setDoorFee },
-          { label: "Dancer Entrance Fee ($)",   val: dancerFee,  set: setDancerFee },
-          { label: "Default Dancer Payout (%)", val: payoutPct,  set: setPayoutPct },
-        ].map(({ label, val, set }) => (
-          <div key={label} className="space-y-1.5">
-            <Label>{label}</Label>
-            <Input type="number" value={val} onChange={e => set(e.target.value)} className="bg-secondary/50" />
-          </div>
-        ))}
-      </div>
-      <Button onClick={handleSave} disabled={saving} className="w-full mt-5">
-        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-        Save Settings
-      </Button>
-    </Section>
-  );
-}
-
 // ─── Report Email panel ───────────────────────────────────────────────────────
 function ReportEmailPanel() {
   const [reportEmail,    setReportEmail]    = useState("");
@@ -1129,11 +1075,8 @@ export default function ClubSettings() {
           <p className="text-muted-foreground text-sm">Manage club configuration, dancers, staff, and promo cards</p>
         </div>
 
-        {/* Row 1: Club config + Report Email */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          <ClubSettingsPanel />
-          <ReportEmailPanel />
-        </div>
+        {/* Row 1: Report Email */}
+        <ReportEmailPanel />
 
         {/* Row 2: Dancers + Staff */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

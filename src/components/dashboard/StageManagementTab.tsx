@@ -469,7 +469,7 @@ export function StageManagementTab() {
   const {
     current, queue, secondsUntilNext, fines, stageHistory,
     advanceQueue, offStageEarly, removeFromQueue, reorderQueue,
-    setFullQueue, skipDancer, putOnStage, notifyRoomExit, clearFines,
+    setFullQueue, skipDancer, putOnStage, addToQueue, notifyRoomExit, clearFines,
   } = useStage();
 
   const [showSkipPin,   setShowSkipPin]   = useState(false);
@@ -507,6 +507,30 @@ export function StageManagementTab() {
 
     prevRoomIdsRef.current = currentIds;
   }, [roomSessions, queue, notifyRoomExit, setFullQueue]);
+
+  // Auto-add newly checked-in dancers to the queue
+  const seenAttendanceRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (attendance.length === 0) return;
+    const currentIds = new Set(attendance.map((a: any) => a.dancer_id as string));
+
+    if (seenAttendanceRef.current.size === 0) {
+      // First load — populate ref without adding to queue (queue may already be set)
+      seenAttendanceRef.current = currentIds;
+      return;
+    }
+
+    // Newly checked-in dancer
+    currentIds.forEach(id => {
+      if (!seenAttendanceRef.current.has(id)) {
+        const att = attendance.find((a: any) => a.dancer_id === id);
+        const name = (att?.dancers as any)?.stage_name ?? "Dancer";
+        if (!current || current.dancerId !== id) addToQueue(id, name);
+      }
+    });
+
+    seenAttendanceRef.current = currentIds;
+  }, [attendance, current, addToQueue]);
 
   const inRoomIds       = new Set(roomSessions.map((s: any) => s.dancer_id as string));
   const currentWithRoom = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;

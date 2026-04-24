@@ -181,6 +181,7 @@ export function usePresentDancersToday() {
   });
 }
 
+export const HOUSE_FEE             = 30;
 export const MUSIC_FEE_PER_SHIFT   = 20;
 export const LATE_ARRIVAL_FEE      = 20;
 export const LATE_ARRIVAL_CUTOFF_H = 20; // 8 PM hour

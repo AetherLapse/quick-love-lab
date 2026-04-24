@@ -1071,7 +1071,10 @@ export default function DoorCheckIn() {
       </div>
 
       {activePanel === "checkin" ? (
-        <DancerCheckInTab onNewDancer={() => {}} />
+        <DancerCheckInTab onNewDancer={(id, name) => {
+          if (!stageOccupied) putOnStage(id, name);
+          else addToQueue(id, name);
+        }} />
       ) : activePanel === "rooms" ? (
         <RoomsPanel />
       ) : (

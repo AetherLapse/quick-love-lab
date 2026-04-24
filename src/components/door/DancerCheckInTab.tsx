@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X } from "lucide-react";
-import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT } from "@/hooks/useDashboardData";
+import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X, Eye, EyeOff } from "lucide-react";
+import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT, HOUSE_FEE, MUSIC_FEE_PER_SHIFT, LATE_ARRIVAL_FEE, calcLateArrivalFee } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -58,6 +58,60 @@ function BanBlockedModal({
   );
 }
 
+// ─── Outstanding balance modal ────────────────────────────────────────────────
+function BalanceBlockModal({
+  name, date, remaining, onOverride, onClose,
+}: {
+  name: string; date: string; remaining: number;
+  onOverride: () => void; onClose: () => void;
+}) {
+  const formatted = new Date(date + "T12:00:00").toLocaleDateString("en-US", {
+    month: "long", day: "numeric", year: "numeric",
+  });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-3xl bg-orange-950 border-2 border-orange-500 shadow-2xl shadow-orange-500/30 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 pt-6 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-orange-500/20 border-2 border-orange-500 flex items-center justify-center">
+              <DollarSign className="w-6 h-6 text-orange-400" />
+            </div>
+            <div>
+              <p className="text-orange-400 text-xs font-bold uppercase tracking-widest">Outstanding Balance</p>
+              <p className="text-white text-xl font-extrabold leading-tight">{name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-orange-500/20 text-orange-400 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 pb-6 space-y-4 mt-3">
+          <div className="rounded-2xl bg-orange-900/50 border border-orange-500/40 p-4 space-y-2">
+            <p className="text-orange-200 text-sm font-semibold">Balance remaining since {formatted}</p>
+            <p className="text-white text-3xl font-extrabold">${remaining.toFixed(2)} owed</p>
+            <p className="text-orange-300/80 text-xs">Dancer must clear this balance before checking in.</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-2xl bg-orange-500 hover:bg-orange-400 text-white font-bold text-sm transition-colors"
+            >
+              Block Entry
+            </button>
+            <button
+              onClick={onOverride}
+              className="flex-1 py-3 rounded-2xl border border-orange-500/50 hover:bg-orange-500/20 text-orange-300 font-bold text-sm transition-colors"
+            >
+              Override & Check In
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface DancerLogEntry {
   name: string;
   time: string;
@@ -67,7 +121,7 @@ interface DancerLogEntry {
 }
 
 interface DancerCheckInTabProps {
-  onNewDancer: () => void;
+  onNewDancer: (dancerId: string, dancerName: string) => void;
 }
 
 type Step = "idle" | "face-camera" | "face-processing" | "face-failed" | "pin" | "success" | "payment";
@@ -110,6 +164,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const [error, setError]       = useState<string | null>(null);
   const [ssn, setSsn]           = useState("");
   const [ssnErr, setSsnErr]     = useState<string | null>(null);
+  const [ssnVisible, setSsnVisible] = useState(false);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -157,6 +212,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   // ── Step 3: Create dancer record + proceed to face ─────────────────────────
   const handleDetailsConfirm = async () => {
     if (!stageName.trim()) { setPinErr("Stage name is required"); return; }
+    if (!phone.trim())     { setPinErr("Phone number is required"); return; }
     if (dancerPin.length < 4) { setPinErr("PIN must be at least 4 digits"); return; }
 
     // Hard under-18 enforcement — defensive double-check
@@ -249,7 +305,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const resetAll = () => {
     setStep("staff_pin"); setDlData(null); setStageName(""); setPhone("");
     setDancerPin(""); setStaffPin(""); setStaffPinErr(null); setPinErr(null);
-    setNewDancerId(null); setError(null); setSsn(""); setSsnErr(null);
+    setNewDancerId(null); setError(null); setSsn(""); setSsnErr(null); setSsnVisible(false);
   };
 
   // ── Step indicators ────────────────────────────────────────────────────────
@@ -369,7 +425,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
                 { label: "Legal Name", value: dlData.fullName ?? "—" },
                 { label: "DOB",        value: dlData.dobFormatted ?? "—" },
                 { label: "ID #",       value: dlData.dlMasked },
-              ].map(r => (
+              ].filter(r => r.value).map(r => (
                 <div key={r.label} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="text-xs text-muted-foreground w-20 shrink-0">{r.label}</span>
                   <span className="text-sm font-medium text-foreground">{r.value}</span>
@@ -400,23 +456,30 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
                 value={ssn}
                 onChange={e => { setSsn(formatSSN(e.target.value)); setSsnErr(null); }}
                 placeholder="XXX-XX-XXXX"
+                type={ssnVisible ? "text" : "password"}
                 inputMode="numeric"
                 maxLength={11}
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm font-mono focus:outline-none focus:border-primary tracking-widest"
+                className="w-full px-4 py-2.5 pr-16 rounded-xl border border-border bg-secondary/30 text-sm font-mono focus:outline-none focus:border-primary tracking-widest"
               />
-              {ssn.replace(/\D/g, "").length === 9 && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-600">
-                  <Shield className="w-4 h-4" />
-                </div>
-              )}
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {ssn.replace(/\D/g, "").length === 9 && <Shield className="w-4 h-4 text-green-600" />}
+                <button
+                  type="button"
+                  onClick={() => setSsnVisible(v => !v)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                >
+                  {ssnVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             {ssnErr && <p className="text-xs text-destructive">{ssnErr}</p>}
             <p className="text-xs text-muted-foreground">Stored encrypted — never readable in plain text</p>
           </div>
 
-          {/* Phone (optional) */}
+          {/* Phone (required) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone (optional)</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone *</label>
             <input
               value={phone}
               onChange={e => setPhone(e.target.value)}
@@ -451,7 +514,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
 
           {pinErr && <p className="text-xs text-destructive">{pinErr}</p>}
 
-          <button onClick={handleDetailsConfirm} disabled={!stageName.trim() || dancerPin.length < 4}
+          <button onClick={handleDetailsConfirm} disabled={!stageName.trim() || !phone.trim() || dancerPin.length < 4}
             className="w-full py-3 rounded-xl bg-primary text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2">
             Continue to Face Scan
           </button>
@@ -740,8 +803,12 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const { user, role } = useAuth();
   const [mode, setMode] = useState<"checkin" | "enroll" | "checkout">("checkin");
   const [step, setStep] = useState<Step>("idle");
-  const [result, setResult] = useState<{ name: string; fee: number; attendanceId: string } | null>(null);
+  const [result, setResult] = useState<{ name: string; fee: number; lateArrivalFee: number; attendanceId: string } | null>(null);
   const [resultMethod, setResultMethod] = useState<"Face Scan" | "PIN Entry">("Face Scan");
+  const [balanceBlock, setBalanceBlock] = useState<{
+    name: string; date: string; remaining: number;
+    pendingId: string; pendingStageName: string; pendingHouseFee: number; pendingMethod: "pin" | "facial";
+  } | null>(null);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
@@ -773,15 +840,8 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     return () => stopFaceCamera();
   }, [stopFaceCamera]);
 
-  const applyLateFee = (baseFee: number): number => {
-    const now = new Date();
-    const cutoff = new Date();
-    cutoff.setHours(20, 30, 0, 0); // 8:30 PM
-    return now >= cutoff ? baseFee + 20 : baseFee;
-  };
-
   const performCheckIn = useCallback(
-    async (dancerId: string, stageName: string, entranceFee: number, method: "pin" | "facial") => {
+    async (dancerId: string, stageName: string, houseFee: number, method: "pin" | "facial") => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -804,11 +864,50 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         return;
       }
 
-      const { attendanceId } = await checkIn.mutateAsync({ dancerId, entranceFee, method, authorId: user.id });
-      setResult({ name: stageName, fee: entranceFee, attendanceId });
+      // ── Outstanding balance check ─────────────────────────────────────────────
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data: prevEntry } = await supabase
+        .from("attendance_log")
+        .select("shift_date, entrance_fee_amount, amount_paid, payment_status")
+        .eq("dancer_id", dancerId)
+        .lt("shift_date", todayStr)
+        .not("payment_status", "in", '("paid_checkin","paid_checkout","ran_off")')
+        .order("shift_date", { ascending: false })
+        .limit(1)
+        .maybeSingle() as any;
+
+      if (prevEntry) {
+        const owed = Math.max(0,
+          Number(prevEntry.entrance_fee_amount ?? 0) + MUSIC_FEE_PER_SHIFT
+          - Number(prevEntry.amount_paid ?? 0)
+        );
+        if (owed > 0) {
+          setStep("idle");
+          setBalanceBlock({
+            name:             stageName,
+            date:             prevEntry.shift_date,
+            remaining:        owed,
+            pendingId:        dancerId,
+            pendingStageName: stageName,
+            pendingHouseFee:  houseFee,
+            pendingMethod:    method,
+          });
+          return;
+        }
+      }
+
+      const lateArrivalFee = calcLateArrivalFee();
+      const { attendanceId } = await checkIn.mutateAsync({
+        dancerId,
+        entranceFee: houseFee,
+        lateArrivalFee,
+        method,
+        authorId: user.id,
+      });
+      setResult({ name: stageName, fee: houseFee, lateArrivalFee, attendanceId });
       setResultMethod(method === "facial" ? "Face Scan" : "PIN Entry");
       setStep("payment");
-      onNewDancer();
+      onNewDancer(dancerId, stageName);
     },
     [checkIn, onNewDancer]
   );
@@ -864,7 +963,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
 
       if (data.matched) {
         try {
-          await performCheckIn(data.dancer_id, data.stage_name, applyLateFee(Number(data.entrance_fee)), "facial");
+          await performCheckIn(data.dancer_id, data.stage_name, HOUSE_FEE, "facial");
         } catch (e: any) {
           toast.error(e?.message ?? "Check-in failed");
           setStep("idle");
@@ -896,7 +995,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       }
       setPin("");
       setPinError(false);
-      await performCheckIn(dancer.id, dancer.stage_name, applyLateFee(Number(dancer.entrance_fee)), "pin");
+      await performCheckIn(dancer.id, dancer.stage_name, HOUSE_FEE, "pin");
     } catch (e: any) {
       toast.error(e?.message ?? "Check-in failed");
       setPinError(false);
@@ -942,6 +1041,37 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
           reason={bannedInfo.reason}
           enrollId={bannedInfo.enrollId}
           onClose={() => setBannedInfo(null)}
+        />
+      )}
+      {balanceBlock && (
+        <BalanceBlockModal
+          name={balanceBlock.name}
+          date={balanceBlock.date}
+          remaining={balanceBlock.remaining}
+          onClose={() => setBalanceBlock(null)}
+          onOverride={async () => {
+            const b = balanceBlock;
+            setBalanceBlock(null);
+            // Proceed with check-in, skipping balance check
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const lateArrivalFee = calcLateArrivalFee();
+            try {
+              const { attendanceId } = await checkIn.mutateAsync({
+                dancerId: b.pendingId,
+                entranceFee: b.pendingHouseFee,
+                lateArrivalFee,
+                method: b.pendingMethod,
+                authorId: user.id,
+              });
+              setResult({ name: b.pendingStageName, fee: b.pendingHouseFee, lateArrivalFee, attendanceId });
+              setResultMethod(b.pendingMethod === "facial" ? "Face Scan" : "PIN Entry");
+              setStep("payment");
+              onNewDancer(b.pendingId, b.pendingStageName);
+            } catch (e: any) {
+              toast.error(e?.message ?? "Check-in failed");
+            }
+          }}
         />
       )}
       <div className="glass-card p-6">
@@ -1093,21 +1223,55 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         )}
 
         {/* PAYMENT PROMPT — shown right after identity verified */}
-        {step === "payment" && result && (
+        {step === "payment" && result && (() => {
+          const isLate   = result.lateArrivalFee > 0;
+          const totalFee = result.fee + MUSIC_FEE_PER_SHIFT + result.lateArrivalFee;
+          return (
           <div className="animate-fade-in space-y-4">
-            {/* Identity confirmed banner */}
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
-              <Check className="w-5 h-5 text-green-600 shrink-0" />
-              <div>
-                <p className="font-bold text-green-800">{result.name} — {resultMethod === "Face Scan" ? "Face Verified" : "PIN Verified"}</p>
-                <p className="text-xs text-green-600">Checked in at {now()}</p>
+            {/* Identity confirmed + arrival status banner */}
+            <div className={`rounded-xl px-4 py-3 flex items-center gap-3 border ${
+              isLate
+                ? "bg-amber-50 border-amber-300"
+                : "bg-green-50 border-green-200"
+            }`}>
+              <Check className={`w-5 h-5 shrink-0 ${isLate ? "text-amber-600" : "text-green-600"}`} />
+              <div className="flex-1 min-w-0">
+                <p className={`font-bold ${isLate ? "text-amber-800" : "text-green-800"}`}>
+                  {result.name} — {resultMethod === "Face Scan" ? "Face Verified" : "PIN Verified"}
+                </p>
+                <p className={`text-xs mt-0.5 ${isLate ? "text-amber-700" : "text-green-600"}`}>
+                  Checked in at {now()}
+                </p>
               </div>
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                isLate
+                  ? "bg-amber-200 text-amber-800"
+                  : "bg-green-200 text-green-800"
+              }`}>
+                {isLate ? "LATE ARRIVAL" : "ON TIME"}
+              </span>
             </div>
 
-            {/* Fee + payment prompt */}
-            <div className="rounded-2xl bg-secondary/40 px-5 py-4 text-center space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">House Fee Due</p>
-              <p className="text-4xl font-extrabold text-foreground">${result.fee}</p>
+            {/* Fee breakdown */}
+            <div className="rounded-2xl border border-border bg-secondary/30 px-5 py-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">House Fee</span>
+                <span className="font-semibold">${result.fee}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Music Fee</span>
+                <span className="font-semibold">${MUSIC_FEE_PER_SHIFT}</span>
+              </div>
+              {isLate && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-amber-600 font-medium">Late Arrival Fee</span>
+                  <span className="font-semibold text-amber-600">+${LATE_ARRIVAL_FEE}</span>
+                </div>
+              )}
+              <div className="border-t border-border pt-2 flex justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Due</span>
+                <span className="text-xl font-extrabold text-foreground">${totalFee}</span>
+              </div>
             </div>
 
             <p className="text-sm font-semibold text-center text-foreground">Did she pay now?</p>
@@ -1116,35 +1280,45 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               <button
                 disabled={markPayment.isPending}
                 onClick={async () => {
-                  await markPayment.mutateAsync({ attendanceId: result.attendanceId, amountPaid: result.fee, status: "paid_checkin" });
-                  addToLog(result.name, resultMethod, result.fee, true);
-                  toast.success(`${result.name} — $${result.fee} paid at check-in`);
+                  await markPayment.mutateAsync({ attendanceId: result.attendanceId, amountPaid: totalFee, status: "paid_checkin" });
+                  addToLog(result.name, resultMethod, totalFee, true);
+                  toast.success(`${result.name} — $${totalFee} paid at check-in`);
                   setStep("success");
                 }}
                 className="w-full py-5 rounded-2xl bg-green-600 hover:bg-green-700 text-white text-lg font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
               >
-                {markPayment.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Check className="w-5 h-5" /> Yes — Paid ${result.fee}</>}
+                {markPayment.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Check className="w-5 h-5" /> Yes — Paid ${totalFee}</>}
               </button>
 
               <button
-                onClick={() => { addToLog(result.name, resultMethod, result.fee, false); setStep("success"); }}
+                onClick={() => { addToLog(result.name, resultMethod, totalFee, false); setStep("success"); }}
                 className="w-full py-4 rounded-2xl border-2 border-border hover:border-primary/50 text-base font-semibold text-muted-foreground hover:text-foreground transition-all active:scale-95"
               >
                 No — Will Pay Later
               </button>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* SUCCESS — after payment decision */}
-        {step === "success" && result && (
+        {step === "success" && result && (() => {
+          const isLate   = result.lateArrivalFee > 0;
+          const totalFee = result.fee + MUSIC_FEE_PER_SHIFT + result.lateArrivalFee;
+          return (
           <div className="animate-fade-in space-y-4">
-            <div className="bg-success/10 border border-success/30 rounded-xl p-5 space-y-1.5">
-              <p className="text-success font-bold text-xl font-heading tracking-wide flex items-center gap-2">
-                <Check className="w-5 h-5" /> {result.name} checked in
-              </p>
+            <div className={`rounded-xl p-5 space-y-1.5 border ${isLate ? "bg-amber-50 border-amber-200" : "bg-success/10 border-success/30"}`}>
+              <div className="flex items-center justify-between">
+                <p className={`font-bold text-xl font-heading tracking-wide flex items-center gap-2 ${isLate ? "text-amber-800" : "text-success"}`}>
+                  <Check className="w-5 h-5" /> {result.name} checked in
+                </p>
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${isLate ? "bg-amber-200 text-amber-800" : "bg-green-200 text-green-800"}`}>
+                  {isLate ? "LATE" : "ON TIME"}
+                </span>
+              </div>
               <p className="text-primary font-medium flex items-center gap-1">
-                <DollarSign className="w-4 h-4" /> ${result.fee} house fee
+                <DollarSign className="w-4 h-4" /> ${totalFee} total due
+                {isLate && <span className="text-amber-600 text-xs ml-1">(incl. late arrival fee)</span>}
               </p>
               <p className="text-muted-foreground text-sm flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" /> {now()}
@@ -1157,7 +1331,8 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               Next Check-In
             </button>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Recent Dancer Check-Ins */}

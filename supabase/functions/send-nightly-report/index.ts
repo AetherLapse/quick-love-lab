@@ -22,18 +22,28 @@ async function fetchDayData(dateStr: string) {
     { data: entries },
     { data: attendance },
     { data: rooms },
+    { data: stageFines },
+    { data: eventLogs },
   ] = await Promise.all([
     supabase.from("customer_entries")
       .select("guest_count, door_fee, entry_tier_id, entry_tiers(name, price)")
       .eq("shift_date", dateStr),
     supabase.from("attendance_log")
-      .select("dancer_id, entrance_fee_amount, late_arrival_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, check_in_time, dancers(stage_name)")
+      .select("dancer_id, entrance_fee_amount, late_arrival_fee_amount, early_leave_fine, fine_waived, amount_paid, payment_status, check_in_time, check_out_time, dancers(stage_name)")
       .eq("shift_date", dateStr)
       .order("check_in_time", { ascending: true }),
     supabase.from("room_sessions")
-      .select("gross_amount, house_cut, dancer_cut, package_name, room_name, entry_time")
+      .select("dancer_id, gross_amount, house_cut, dancer_cut, package_name, room_name, entry_time, num_songs")
       .eq("shift_date", dateStr)
       .order("entry_time", { ascending: true }),
+    supabase.from("stage_fines")
+      .select("dancer_id, dancer_name, reason, amount")
+      .eq("shift_date", dateStr),
+    supabase.from("dancer_event_log")
+      .select("dancer_id, event_type, payload, created_at")
+      .eq("event_type", "behaviour_note")
+      .gte("created_at", dateStr + "T00:00:00")
+      .lt("created_at", dateStr + "T23:59:59"),
   ]);
 
   const totalGuests  = (entries ?? []).reduce((s: number, e: any) => s + Number(e.guest_count ?? 0), 0);
@@ -58,7 +68,7 @@ async function fetchDayData(dateStr: string) {
   }
   const tierRows = Object.values(tierMap).sort((a, b) => b.revenue - a.revenue);
 
-  // Group rooms by package
+  // Group rooms by package (for the overview)
   const packageMap: Record<string, { name: string; count: number; gross: number; house: number; dancer: number }> = {};
   for (const r of (rooms ?? []) as any[]) {
     const key = r.package_name ?? "Room Session";
@@ -70,21 +80,53 @@ async function fetchDayData(dateStr: string) {
   }
   const packageRows = Object.values(packageMap).sort((a, b) => b.gross - a.gross);
 
+  // Group rooms by dancer_id for per-dancer activity
+  const roomsByDancer: Record<string, { sessions: number; dancerCut: number; packages: string[] }> = {};
+  for (const r of (rooms ?? []) as any[]) {
+    const did = r.dancer_id;
+    if (!did) continue;
+    if (!roomsByDancer[did]) roomsByDancer[did] = { sessions: 0, dancerCut: 0, packages: [] };
+    roomsByDancer[did].sessions  += 1;
+    roomsByDancer[did].dancerCut += Number(r.dancer_cut ?? 0);
+    roomsByDancer[did].packages.push(r.package_name ?? "Session");
+  }
+
+  // Group stage fines by dancer_id
+  const stageFinesByDancer: Record<string, { count: number; total: number; reasons: string[] }> = {};
+  for (const f of (stageFines ?? []) as any[]) {
+    const did = f.dancer_id ?? f.dancer_name; // fallback to name if no id
+    if (!stageFinesByDancer[did]) stageFinesByDancer[did] = { count: 0, total: 0, reasons: [] };
+    stageFinesByDancer[did].count  += 1;
+    stageFinesByDancer[did].total  += Number(f.amount ?? 0);
+    stageFinesByDancer[did].reasons.push(f.reason ?? "Stage fine");
+  }
+
+  // Group behaviour notes by dancer_id
+  const notesByDancer: Record<string, string[]> = {};
+  for (const e of (eventLogs ?? []) as any[]) {
+    const did  = e.dancer_id;
+    const note = e.payload?.note ?? e.payload?.text ?? "";
+    if (!did || !note) continue;
+    if (!notesByDancer[did]) notesByDancer[did] = [];
+    notesByDancer[did].push(note);
+  }
+
   const unpaidDancers = (attendance ?? []).filter((a: any) =>
     !["paid_checkin","paid_during","paid_checkout","ran_off"].includes(a.payment_status)
   );
   const ranOffDancers = (attendance ?? []).filter((a: any) => a.payment_status === "ran_off");
   const lateDancers   = (attendance ?? []).filter((a: any) => Number(a.late_arrival_fee_amount ?? 0) > 0);
+  const stageFineTotal = (stageFines ?? []).reduce((s: number, f: any) => s + Number(f.amount ?? 0), 0);
 
   return {
     dateStr, totalGuests, doorRevenue, roomGross, roomHouse,
-    houseFees, lateFees, musicFees, finesOwed, totalPaid,
+    houseFees, lateFees, musicFees, finesOwed, totalPaid, stageFineTotal,
     dancerCount:  (attendance ?? []).length,
     roomCount:    (rooms ?? []).length,
-    grossTotal:   doorRevenue + roomHouse + houseFees + lateFees + musicFees + finesOwed,
+    grossTotal:   doorRevenue + roomHouse + houseFees + lateFees + musicFees + finesOwed + stageFineTotal,
     attendance:   attendance ?? [],
     rooms:        rooms ?? [],
-    tierRows, packageRows,
+    tierRows, packageRows, roomsByDancer, stageFinesByDancer, notesByDancer,
     unpaidDancers, ranOffDancers, lateDancers,
   };
 }
@@ -250,34 +292,72 @@ function dailyHtml(d: Awaited<ReturnType<typeof fetchDayData>>, dateLabel: strin
   </div>`;
 
   // ── Dancer section ──
+  const PAID_STATUSES = ["paid_checkin","paid_during","paid_checkout","ran_off"];
+  const STATUS_LABEL: Record<string, string> = {
+    paid_checkin: "Paid Check-In", paid_during: "Paid During",
+    paid_checkout: "Paid Check-Out", ran_off: "Ran Off", unpaid: "Unpaid",
+  };
+
   const dancerRows = d.attendance.map((a: any) => {
-    const ps          = a.payment_status ?? "unpaid";
-    const badgeClass  = ps === "ran_off" ? "red" : (ps === "unpaid" ? "amber" : "green");
-    const badgeLabel  = ({ paid_checkin: "Paid Check-In", paid_during: "Paid During", paid_checkout: "Paid Check-Out", ran_off: "Ran Off", unpaid: "Unpaid" } as any)[ps] ?? ps;
-    const houseFee    = Number(a.entrance_fee_amount ?? 0);
-    const lateFee     = Number(a.late_arrival_fee_amount ?? 0);
-    const musicFee    = 20;
-    const total       = houseFee + lateFee + musicFee;
-    const lateBadge   = lateFee > 0 ? ` <span class="badge amber">LATE +${fmt(lateFee)}</span>` : "";
+    const ps         = a.payment_status ?? "unpaid";
+    const badgeClass = ps === "ran_off" ? "red" : (PAID_STATUSES.includes(ps) ? "green" : "amber");
+    const houseFee   = Number(a.entrance_fee_amount ?? 0);
+    const lateFee    = Number(a.late_arrival_fee_amount ?? 0);
+    const musicFee   = 20;
+    const fine       = a.fine_waived ? 0 : Number(a.early_leave_fine ?? 0);
+    const totalOwed  = houseFee + lateFee + musicFee + fine;
+    const paid       = Number(a.amount_paid ?? 0);
+    const balance    = totalOwed - paid;
+
+    // Shift times
+    const inTime  = fmtTime(a.check_in_time);
+    const outTime = a.check_out_time ? fmtTime(a.check_out_time) : "Still in";
+    const lateBadge = lateFee > 0 ? ` <span class="badge amber">LATE</span>` : "";
+
+    // Room sessions
+    const dr = d.roomsByDancer[a.dancer_id];
+    const roomLine = dr
+      ? `🛋️ ${dr.sessions} room session${dr.sessions !== 1 ? "s" : ""} — packages: ${[...new Set(dr.packages)].join(", ")} · Dancer earned: <strong>${fmt(dr.dancerCut)}</strong>`
+      : `<span class="zero">No room sessions</span>`;
+
+    // Stage fines
+    const sf = d.stageFinesByDancer[a.dancer_id];
+    const fineLine = sf
+      ? `⚠️ ${sf.count} stage fine${sf.count !== 1 ? "s" : ""} (${fmt(sf.total)}): ${sf.reasons.join("; ")}`
+      : "";
+
+    // Behaviour notes
+    const notes = d.notesByDancer[a.dancer_id] ?? [];
+    const noteLine = notes.length > 0
+      ? `📝 ${notes.join(" · ")}`
+      : "";
+
+    const activityLines = [roomLine, fineLine, noteLine].filter(Boolean).join("<br>");
+
     return `<tr>
-      <td>
+      <td style="min-width:130px;">
         <div class="fee-cell">
           <div class="main">${a.dancers?.stage_name ?? "—"}${lateBadge}</div>
-          <div class="sub">In ${fmtTime(a.check_in_time)}</div>
+          <div class="sub">${inTime} → ${outTime}</div>
         </div>
       </td>
-      <td class="right">
+      <td style="font-size:12px;line-height:1.6;">${activityLines}</td>
+      <td class="right" style="white-space:nowrap;">
         <div class="fee-cell">
-          <div class="main">${fmt(total)}</div>
-          <div class="sub">H:${fmt(houseFee)} · M:${fmt(musicFee)}${lateFee > 0 ? ` · L:${fmt(lateFee)}` : ""}</div>
+          <div class="main">${fmt(totalOwed)}</div>
+          <div class="sub">H:${fmt(houseFee)} M:${fmt(musicFee)}${lateFee > 0 ? ` L:${fmt(lateFee)}` : ""}${fine > 0 ? ` F:${fmt(fine)}` : ""}</div>
         </div>
       </td>
-      <td class="right">${fmt(Number(a.amount_paid ?? 0))}</td>
-      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td class="right" style="white-space:nowrap;">
+        <div class="fee-cell">
+          <div class="main">${fmt(paid)}</div>
+          ${balance > 0 ? `<div class="sub" style="color:#dc2626;">owes ${fmt(balance)}</div>` : `<div class="sub" style="color:#16a34a;">✓ settled</div>`}
+        </div>
+      </td>
+      <td><span class="badge ${badgeClass}">${STATUS_LABEL[ps] ?? ps}</span></td>
     </tr>`;
   }).join("");
 
-  const feesOwed      = d.houseFees + d.lateFees + d.musicFees + d.finesOwed;
   const feesSection = d.attendance.length > 0 ? `
   <div class="section">
     <div class="section-title">💃 Dancer Summary (${d.dancerCount})</div>
@@ -285,10 +365,16 @@ function dailyHtml(d: Awaited<ReturnType<typeof fetchDayData>>, dateLabel: strin
       <div class="kpi"><div class="label">House Fees</div><div class="value">${fmt(d.houseFees)}</div></div>
       <div class="kpi amber"><div class="label">Late Fees</div><div class="value">${fmt(d.lateFees)}</div></div>
       <div class="kpi"><div class="label">Music Fees</div><div class="value">${fmt(d.musicFees)}</div></div>
-      <div class="kpi green"><div class="label">Collected</div><div class="value">${fmt(d.totalPaid)}</div></div>
+      <div class="kpi green"><div class="label">Fees Collected</div><div class="value">${fmt(d.totalPaid)}</div></div>
     </div>
     <table>
-      <tr><th>Dancer</th><th class="right">Owed</th><th class="right">Paid</th><th>Status</th></tr>
+      <tr>
+        <th>Dancer / Shift</th>
+        <th>Activity</th>
+        <th class="right">Owed</th>
+        <th class="right">Paid</th>
+        <th>Status</th>
+      </tr>
       ${dancerRows}
     </table>
   </div>` : "";
@@ -326,6 +412,7 @@ function dailyHtml(d: Awaited<ReturnType<typeof fetchDayData>>, dateLabel: strin
       <tr><td>Dancer Music Fees</td><td class="right">${fmt(d.musicFees)}</td></tr>
       ${d.lateFees > 0 ? `<tr><td>Late Arrival Fees</td><td class="right">${fmt(d.lateFees)}</td></tr>` : ""}
       ${d.finesOwed > 0 ? `<tr><td>Early Leave Fines</td><td class="right">${fmt(d.finesOwed)}</td></tr>` : ""}
+      ${d.stageFineTotal > 0 ? `<tr><td>Stage Fines</td><td class="right">${fmt(d.stageFineTotal)}</td></tr>` : ""}
     </table>
   </div>`;
 
@@ -448,7 +535,7 @@ function weeklyHtml(w: Awaited<ReturnType<typeof fetchWeekData>>) {
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type" } });
 
   const body = await req.json().catch(() => ({}));

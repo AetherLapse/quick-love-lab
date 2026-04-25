@@ -28,9 +28,8 @@ import {
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 
-// TODO: make configurable by Super Admin (mirrors PrivateRooms)
 const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["Private Room"] },
+  { floor: "Floor 1", rooms: ["Private Room 1", "Private Room 2"] },
 ];
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
 

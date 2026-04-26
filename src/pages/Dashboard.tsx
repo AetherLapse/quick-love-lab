@@ -49,6 +49,13 @@ export default function Dashboard({ defaultTab }: { defaultTab?: Tab }) {
   const { user, role } = useAuth();
   const time = useCurrentTime();
 
+  // Sync active tab when the route changes (e.g. /stage → /reports renders same component)
+  useEffect(() => {
+    const tab = defaultTab ?? "Summary";
+    setActiveTab(tab);
+    setMounted(prev => prev.has(tab) ? prev : new Set([...prev, tab]));
+  }, [defaultTab]);
+
   const isOwnerManager = role === "admin" || role === "owner" || role === "manager";
   const visibleTabs = tabs.filter(t => !OWNER_MANAGER_TABS.includes(t) || isOwnerManager);
 

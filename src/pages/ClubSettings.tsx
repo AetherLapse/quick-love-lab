@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { CodeCreationPanel, VendorPanel, UsageTrackingPanel } from "@/pages/PromoSettings";
 import { Modal } from "@/components/Modal";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
@@ -1084,19 +1083,9 @@ export default function ClubSettings() {
           <StaffPanel />
         </div>
 
-        {/* Row 3: Promo card system */}
-        <PromoRow />
+        {/* Row 3: Promo card system — hidden (Super Admin only) */}
       </div>
     </AppLayout>
   );
 }
 
-function PromoRow() {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-      <CodeCreationPanel />
-      <VendorPanel />
-      <UsageTrackingPanel />
-    </div>
-  );
-}

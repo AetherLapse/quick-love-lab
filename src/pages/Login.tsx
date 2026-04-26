@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogIn, Loader2, DoorOpen, GlassWater, Music2, ArrowLeft, Delete } from "lucide-react";
+import { LogIn, Loader2, DoorOpen, GlassWater, Music2, ArrowLeft, Delete, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo-2nyt.png";
 
@@ -95,6 +95,7 @@ export default function Login() {
   const [loading, setLoading]   = useState(false);
   const [shake, setShake]       = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
+  const [ownerMode, setOwnerMode] = useState(false);
 
   // PIN login state
   const [pinMode,    setPinMode]    = useState<string | null>(null); // role string or null
@@ -277,13 +278,24 @@ export default function Login() {
                 {pinLoading ? "Signing in…" : "Sign In"}
               </button>
             </div>
-          ) : (
-            /* ── Email / password mode ── */
-            <>
-              <h1 className="text-3xl font-heading tracking-widest text-foreground mb-2">STAFF LOGIN</h1>
-              <p className="text-sm text-muted-foreground mb-8">Sign in to your associate account</p>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+          ) : ownerMode ? (
+            /* ── Owner / email-password mode ── */
+            <div className="space-y-5">
+              <div className="flex items-center gap-3 mb-2">
+                <button
+                  onClick={() => { setOwnerMode(false); setEmail(""); setPassword(""); setError(""); }}
+                  className="p-2 rounded-xl border border-border hover:bg-secondary text-muted-foreground transition-all"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <div>
+                  <h1 className="text-2xl font-heading tracking-widest text-foreground">OWNER LOGIN</h1>
+                  <p className="text-xs text-muted-foreground mt-0.5">Sign in with your account credentials</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Email</label>
                   <input
@@ -292,6 +304,7 @@ export default function Login() {
                     onChange={(e) => { setEmail(e.target.value); setError(""); }}
                     className="w-full border border-border rounded-xl px-4 py-3.5 text-sm text-foreground bg-white placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
                     placeholder="you@example.com"
+                    autoFocus
                     required
                   />
                 </div>
@@ -317,15 +330,21 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl py-3.5 text-base hover:opacity-90 transition-all disabled:opacity-60 shadow-md hover:shadow-lg mt-2"
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl py-3.5 text-base hover:opacity-90 transition-all disabled:opacity-60 shadow-md hover:shadow-lg"
                 >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
                   {loading ? "Signing in…" : "Sign In"}
                 </button>
               </form>
+            </div>
 
-              {/* Quick role PIN buttons */}
-              <div className="mt-6 border-t border-border/60 pt-5 space-y-2.5">
+          ) : (
+            /* ── Default: PIN role selection ── */
+            <>
+              <h1 className="text-3xl font-heading tracking-widest text-foreground mb-2">STAFF LOGIN</h1>
+              <p className="text-sm text-muted-foreground mb-8">Sign in to your associate account</p>
+
+              <div className="space-y-2.5">
                 <p className="text-xs text-muted-foreground text-center uppercase tracking-wider mb-3">Login with PIN</p>
                 {STAFF_ROLES.map(({ label, icon: Icon, role }) => (
                   <button
@@ -337,6 +356,17 @@ export default function Login() {
                     {label}
                   </button>
                 ))}
+
+                {/* Owner login — visually separated */}
+                <div className="pt-2">
+                  <button
+                    onClick={() => setOwnerMode(true)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary text-sm font-semibold transition-all shadow-sm"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Login as Owner
+                  </button>
+                </div>
               </div>
 
               <button

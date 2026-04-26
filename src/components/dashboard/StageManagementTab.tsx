@@ -550,11 +550,15 @@ export function StageManagementTab() {
 
   const buildEntries = useCallback((): StageEntry[] => {
     const inRoomSet = new Set(roomSessions.map((s: any) => s.dancer_id as string));
+    // Exclude dancers skipped this session so Auto-Start doesn't loop them back on stage
+    const skippedIds = new Set(
+      stageHistory.filter(h => h.endReason === "skipped").map(h => h.dancerId)
+    );
     let entries: StageEntry[];
     if (attendance.length > 0) {
       entries = [...attendance]
         .sort((a, b) => new Date(a.clock_in).getTime() - new Date(b.clock_in).getTime())
-        .filter(a => !current || a.dancer_id !== current.dancerId)
+        .filter(a => (!current || a.dancer_id !== current.dancerId) && !skippedIds.has(a.dancer_id))
         .map(a => ({
           dancerId:   a.dancer_id,
           dancerName: (a.dancers as any)?.stage_name ?? "Dancer",
@@ -565,7 +569,7 @@ export function StageManagementTab() {
       const presentStatuses = new Set(["available", "on_stage", "queued", "in_room"]);
       entries = activeDancers
         .filter(d => d.live_status && presentStatuses.has(d.live_status))
-        .filter(d => !current || d.id !== current.dancerId)
+        .filter(d => (!current || d.id !== current.dancerId) && !skippedIds.has(d.id))
         .map(d => ({
           dancerId:   d.id,
           dancerName: d.stage_name,
@@ -575,7 +579,7 @@ export function StageManagementTab() {
     }
     // In-room dancers always go to the back
     return [...entries.filter(e => !e.inRoom), ...entries.filter(e => e.inRoom)];
-  }, [attendance, activeDancers, roomSessions, current]);
+  }, [attendance, activeDancers, roomSessions, current, stageHistory]);
 
   const buildQueue = useCallback(() => {
     setFullQueue(buildEntries());

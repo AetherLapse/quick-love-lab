@@ -586,8 +586,8 @@ export function ReportsTab() {
         )}
       </div>
 
-      {/* ── Vendor Tracking ── */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      {/* ── Vendor Tracking — hidden (Super Admin only) ── */}
+      <div className="hidden rounded-2xl border border-border bg-card overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Tag className="w-5 h-5 text-primary" />

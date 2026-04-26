@@ -34,18 +34,20 @@ serve(async (req) => {
 
   // ── verify_staff_pin ───────────────────────────────────────────────────────
   if (action === "verify_staff_pin") {
-    const { user_id, pin } = body as { user_id: string; pin: string };
-    if (!user_id || !pin) return json({ success: false, reason: "missing_fields" }, 400);
+    const { pin } = body as { pin: string };
+    if (!pin) return json({ success: false, reason: "missing_fields" }, 400);
 
+    // Match any active staff profile by PIN — the person entering the PIN
+    // may not be the same user currently logged into the session
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, full_name")
-      .eq("user_id", user_id)
+      .select("user_id, full_name, is_active")
       .eq("pin_code", String(pin))
       .maybeSingle();
 
     if (error) return json({ success: false, reason: "server_error" }, 500);
     if (!data) return json({ success: false, reason: "wrong_pin" });
+    if (!data.is_active) return json({ success: false, reason: "inactive" });
     return json({ success: true, full_name: data.full_name });
   }
 

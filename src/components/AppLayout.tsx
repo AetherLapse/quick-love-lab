@@ -19,6 +19,7 @@ import {
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
 import { KioskLockScreen } from "@/components/KioskLockScreen";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 
 type AppRole = "admin" | "owner" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "backroom_tv" | "bartender" | "dj";
 
@@ -258,17 +259,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { role, user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const filteredNav = navItems.filter(
     (item) => role && item.roles.includes(role as AppRole)
   );
 
+  useRealtimeSync();
   const { isLocked } = useKioskHeartbeat();
 
   const handleNavigate = (path: string) => {
     navigate(path);
-    setMobileOpen(false);
+    setDrawerOpen(false);
   };
 
   const sidebarProps = {
@@ -283,23 +285,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <KioskLockScreen isLocked={isLocked} />
-      {/* Desktop sidebar — only on true large screens (≥1280px) */}
-      <aside className="hidden xl:block w-56 shrink-0 sticky top-0 h-screen">
-        <Sidebar {...sidebarProps} />
-      </aside>
 
-      {/* Backdrop — phones + tablets (< 1280px) */}
-      {mobileOpen && (
+      {/* Backdrop — all screen sizes */}
+      {drawerOpen && (
         <div
-          className="xl:hidden fixed inset-0 z-40 bg-black/50"
-          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50"
+          onClick={() => setDrawerOpen(false)}
         />
       )}
 
-      {/* Drawer — phones + tablets (< 1280px) */}
+      {/* Drawer — all screen sizes */}
       <aside
-        className={`xl:hidden fixed top-0 left-0 z-50 h-full w-64 transition-transform duration-200 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed top-0 left-0 z-50 h-full w-64 transition-transform duration-200 ${
+          drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <Sidebar {...sidebarProps} />
@@ -307,18 +305,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar — shown on phones + tablets (< 1280px) */}
+        {/* Top bar — always visible */}
         <header
-          className="xl:hidden flex items-center gap-3 px-4 py-3 border-b border-border"
+          className="flex items-center gap-3 px-4 py-3 border-b border-border"
           style={{ background: "hsl(240 18% 10%)" }}
         >
           <button
-            onClick={() => setMobileOpen(true)}
+            onClick={() => setDrawerOpen(o => !o)}
             className="text-white/60 hover:text-white p-1"
           >
             <Menu className="w-6 h-6" />
           </button>
-          <span className="text-white text-base font-semibold">2NYT</span>
+          <span className="text-white text-base font-semibold">2NYT Entertainment</span>
         </header>
 
         <main className="flex-1 overflow-y-auto">

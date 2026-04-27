@@ -18,9 +18,18 @@ export function parseAAMVA(text: string): AAMVAData {
     text.match(new RegExp(`${code}([^\n\r\u001e\u001c]+)`))?.[1]?.trim() ?? null;
 
   const lastName  = field("DCS");
-  const firstName = field("DAC");
-  const fullName  = firstName && lastName ? `${firstName} ${lastName}`
-                  : firstName ?? lastName ?? null;
+  const firstName = field("DAC") ?? field("DCT");
+  const daaFull   = field("DAA");
+
+  let fullName: string | null = null;
+  if (firstName && lastName) {
+    fullName = `${firstName} ${lastName}`;
+  } else if (daaFull) {
+    const parts = daaFull.split(",").map(s => s.trim()).filter(Boolean);
+    fullName = parts.length >= 2 ? `${parts[1]} ${parts[0]}` : parts[0] ?? null;
+  } else {
+    fullName = firstName ?? lastName ?? null;
+  }
 
   const street  = field("DAG");
   const city    = field("DAI");

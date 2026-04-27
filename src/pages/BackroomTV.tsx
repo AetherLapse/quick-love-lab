@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic2, Clock, BedDouble, CheckCircle2, Volume2, VolumeX, User } from "lucide-react";
+import { Mic2, Clock, BedDouble, CheckCircle2, Volume2, VolumeX, User, LogOut } from "lucide-react";
 import { useStage, useElapsed } from "@/contexts/StageContext";
 import { useActiveRoomSessions } from "@/hooks/useDashboardData";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 import logo from "@/assets/logo-2nyt.png";
 
 // ── Web Audio beep ─────────────────────────────────────────────────────────────
@@ -199,7 +201,9 @@ function RoomsPanel() {
 
 // ── Main Backroom TV ──────────────────────────────────────────────────────────
 export default function BackroomTV() {
-  const { current, queue, secondsUntilNext, paused } = useStage();
+  const { current, queue, secondsUntilNext, paused } = useStage() as any;
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
   const now     = useNow();
   const nextUp  = queue[0] ?? null;
 
@@ -316,6 +320,13 @@ export default function BackroomTV() {
 
       {/* Footer status */}
       <footer className="px-8 py-3 border-t border-white/10 flex items-center justify-between text-xs text-white/30">
+        <button
+          onClick={async () => { await signOut(); navigate("/login"); }}
+          className="flex items-center gap-1.5 text-white/30 hover:text-red-400 transition-colors"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Sign Out
+        </button>
         <span>{queue.length} in queue</span>
         {paused && <span className="text-amber-400 font-semibold">⏸ Rotation Paused</span>}
         <span>Backroom TV · {muted ? "Muted 🔇" : "Sound On 🔊"}</span>

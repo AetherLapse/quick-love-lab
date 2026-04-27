@@ -364,7 +364,7 @@ export default function Login() {
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary text-sm font-semibold transition-all shadow-sm"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    Login as Owner
+                    Login as Owner/Manager
                   </button>
                 </div>
               </div>

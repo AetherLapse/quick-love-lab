@@ -57,7 +57,7 @@ const navItems: NavItem[] = [
   },
   {
     path: "/rooms",
-    label: "Rooms",
+    label: "VIP Rooms",
     icon: BedDouble,
     roles: ["admin", "owner", "manager", "room_attendant", "door_staff"],
   },

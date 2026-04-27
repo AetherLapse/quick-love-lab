@@ -382,7 +382,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
           currentDancerId=""
           onConfirm={data => {
             setDlData(data);
-            setStageName(data.fullName?.split(" ")[0] ?? "");
+            setStageName("");
             setStep("details");
           }}
           onBack={() => setStep("staff_pin")}
@@ -413,7 +413,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
           {/* DL data summary + age badge */}
           <div className="rounded-xl border border-border overflow-hidden">
             <div className="px-4 py-2 bg-secondary/40 border-b border-border flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">From Driver's License</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID Verified</p>
               {age !== null && (
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${age >= 21 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                   Age {age}{age >= 21 ? " ✓ 21+" : " · 18–20"}
@@ -422,9 +422,8 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
             </div>
             <div className="divide-y divide-border/60">
               {[
-                { label: "Legal Name", value: dlData.fullName ?? "—" },
-                { label: "DOB",        value: dlData.dobFormatted ?? "—" },
-                { label: "ID #",       value: dlData.dlMasked },
+                { label: "DOB",  value: dlData.dobFormatted ?? "—" },
+                { label: "ID #", value: dlData.dlMasked },
               ].filter(r => r.value).map(r => (
                 <div key={r.label} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="text-xs text-muted-foreground w-20 shrink-0">{r.label}</span>
@@ -434,15 +433,17 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          {/* Stage name */}
+          {/* Stage name — prominent */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stage Name *</label>
+            <label className="text-xs font-semibold text-primary uppercase tracking-wider">Choose a Stage Name *</label>
             <input
               value={stageName}
               onChange={e => setStageName(e.target.value)}
-              placeholder="Working name / stage name"
-              className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm focus:outline-none focus:border-primary"
+              placeholder="Enter stage name"
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl border-2 border-primary/40 bg-primary/5 text-base font-semibold focus:outline-none focus:border-primary"
             />
+            <p className="text-xs text-muted-foreground">This is the name shown on stage, schedules, and displays</p>
           </div>
 
           {/* SSN — encrypted before storage */}

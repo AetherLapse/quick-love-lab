@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import {
   FileText, Plus, X, Play, ChevronRight, Mic2, Clock, SkipForward, LogOut,
-  DoorOpen, Users, BedDouble, Loader2, DollarSign, Check,
+  DoorOpen, Users, BedDouble, Loader2, DollarSign, Check, History,
 } from "lucide-react";
 import { DancerCheckOutFlow } from "@/components/door/DancerCheckOutFlow";
 import { useStage } from "@/contexts/StageContext";
@@ -29,7 +29,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 
 const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["Private Room 1", "Private Room 2"] },
+  { floor: "Floor 1", rooms: ["VIP Room 1", "VIP Room 2"] },
 ];
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
 
@@ -617,12 +617,66 @@ function ActiveRoomSessionsStrip({
 // ─── Dancer Balances Panel ───────────────────────────────────────────────────
 
 const PAYMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  unpaid:        { label: "Unpaid",          color: "bg-amber-100 text-amber-700" },
+  unpaid:        { label: "Currently Owes",   color: "bg-amber-100 text-amber-700" },
   paid_checkin:  { label: "Paid at Check-In", color: "bg-green-100 text-green-700" },
   paid_during:   { label: "Paid During Shift", color: "bg-green-100 text-green-700" },
   paid_checkout: { label: "Paid at Check-Out", color: "bg-green-100 text-green-700" },
   ran_off:       { label: "Ran Off",           color: "bg-red-100 text-red-700" },
 };
+
+function PaymentHistoryModal({ attendanceId, dancerName, onClose }: {
+  attendanceId: string; dancerName: string; onClose: () => void;
+}) {
+  const [history, setHistory] = useState<{ id: string; amount: number; recorded_at: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    (supabase as any).from("payment_history")
+      .select("id, amount, recorded_at")
+      .eq("attendance_id", attendanceId)
+      .order("recorded_at", { ascending: false })
+      .then(({ data }: any) => { setHistory(data ?? []); setLoading(false); });
+  }, [attendanceId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-80 overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-foreground">Payment History</h3>
+            <p className="text-xs text-muted-foreground">{dancerName}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-secondary text-muted-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="px-5 py-4 max-h-64 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No payments recorded yet</p>
+          ) : (
+            <div className="space-y-2">
+              {history.map(h => (
+                <div key={h.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-secondary/40 border border-border">
+                  <span className="text-sm font-bold text-green-600">${Number(h.amount).toFixed(2)}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {new Date(h.recorded_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <span className="text-xs text-muted-foreground font-semibold">Total</span>
+                <span className="text-sm font-bold text-green-600">${history.reduce((s, h) => s + Number(h.amount), 0).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DancerBalancesPanel() {
   const { data: balances = [] } = useDancerBalancesToday();
@@ -631,6 +685,7 @@ function DancerBalancesPanel() {
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payInput, setPayInput] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [historyFor, setHistoryFor] = useState<{ attendanceId: string; dancerName: string } | null>(null);
 
   const fmtCur = (n: number) => `$${Number(n).toFixed(2)}`;
 
@@ -643,6 +698,12 @@ function DancerBalancesPanel() {
     const newStatus = newTotal >= totalDue ? "paid_during" : "unpaid";
     try {
       await markPayment.mutateAsync({ attendanceId, amountPaid: newTotal, status: newStatus as any });
+      await (supabase as any).from("payment_history").insert({
+        attendance_id: attendanceId,
+        dancer_id:     current?.dancerId,
+        amount,
+        shift_date:    new Date().toISOString().slice(0, 10),
+      });
       toast.success(`Payment of ${fmtCur(amount)} recorded`);
       setPayingId(null);
       setPayInput("");
@@ -656,6 +717,13 @@ function DancerBalancesPanel() {
 
   return (
     <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+      {historyFor && (
+        <PaymentHistoryModal
+          attendanceId={historyFor.attendanceId}
+          dancerName={historyFor.dancerName}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
       {/* Header — always visible, tap to expand/collapse */}
       <button
         className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-secondary/30 transition-colors"
@@ -755,7 +823,7 @@ function DancerBalancesPanel() {
                             <span className="text-purple-500 text-[10px]">(−{fmtCur(roomSettled)} room)</span>
                           )}
                           {cashForHouse > 0 && !houseDone && (
-                            <span className="text-blue-500 text-[10px]">(−{fmtCur(cashForHouse)} cash)</span>
+                            <span className="text-green-600 text-[10px]">(Paid: −{fmtCur(cashForHouse)} cash)</span>
                           )}
                         </div>
                       </div>
@@ -779,6 +847,15 @@ function DancerBalancesPanel() {
                     className="w-full py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-sm font-semibold transition-all active:scale-95"
                   >
                     Record Payment
+                  </button>
+                )}
+
+                {b.amountPaid > 0 && (
+                  <button
+                    onClick={() => setHistoryFor({ attendanceId: b.attendanceId, dancerName: b.stageName })}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-border hover:bg-secondary/50 text-xs text-muted-foreground hover:text-foreground font-medium transition-all"
+                  >
+                    <History className="w-3.5 h-3.5" /> View Payment History
                   </button>
                 )}
 

@@ -16,7 +16,7 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 // TODO: make configurable by Super Admin
 const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["Private Room 1", "Private Room 2"] },
+  { floor: "Floor 1", rooms: ["VIP Room 1", "VIP Room 2"] },
 ];
 
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
@@ -304,7 +304,7 @@ export function RoomsPanel() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="font-heading text-3xl tracking-wide">Private Rooms</h1>
+            <h1 className="font-heading text-3xl tracking-wide">VIP Rooms</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {active.length} active · {queued.length} in queue
             </p>

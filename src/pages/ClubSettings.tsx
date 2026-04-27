@@ -10,7 +10,7 @@ import {
   Settings, Save, UserPlus, Users,
   Loader2, Eye, EyeOff, Check, ShieldCheck, Mic2,
   ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle, Plus, X,
-  Mail, Send,
+  Mail, Send, Clock,
 } from "lucide-react";
 
 type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "bartender" | "dj" | "backroom_tv";
@@ -1062,6 +1062,112 @@ function ReportEmailPanel() {
   );
 }
 
+// ─── Operations / Timings panel ───────────────────────────────────────────────
+function OperationsPanel() {
+  const [openTime,        setOpenTime]        = useState("18:00");
+  const [leaveCutoff,     setLeaveCutoff]     = useState("00:00");
+  const [dayReset,        setDayReset]        = useState("06:00");
+  const [lateArrival,     setLateArrival]     = useState("20:30");
+  const [saving,          setSaving]          = useState(false);
+  const [settingsId,      setSettingsId]      = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from("club_settings").select("*").single().then(({ data }) => {
+      if (!data) return;
+      setSettingsId(data.id);
+      const d = data as any;
+      if (d.open_time)         setOpenTime(d.open_time.slice(0, 5));
+      if (d.leave_cutoff_time) setLeaveCutoff(d.leave_cutoff_time.slice(0, 5));
+      if (d.day_reset_time)    setDayReset(d.day_reset_time.slice(0, 5));
+      if (d.late_arrival_time) setLateArrival(d.late_arrival_time.slice(0, 5));
+    });
+  }, []);
+
+  const handleSave = async () => {
+    if (!settingsId) return;
+    setSaving(true);
+    const { error } = await supabase.from("club_settings").update({
+      open_time:         openTime + ":00",
+      leave_cutoff_time: leaveCutoff + ":00",
+      day_reset_time:    dayReset + ":00",
+      late_arrival_time: lateArrival + ":00",
+    } as any).eq("id", settingsId);
+    setSaving(false);
+    if (error) toast.error(error.message); else toast.success("Timing settings saved");
+  };
+
+  const fmt12 = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+  };
+
+  return (
+    <Section icon={<Clock className="w-5 h-5" />} title="Operations & Timings" subtitle="Club hours, fine windows, and day boundaries">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Open time */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Open Time
+              <span className="text-xs font-normal text-muted-foreground">({fmt12(openTime)})</span>
+            </Label>
+            <Input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} />
+            <p className="text-xs text-muted-foreground">No early-leave fines before this time</p>
+          </div>
+
+          {/* Leave cutoff */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Leave Cutoff
+              <span className="text-xs font-normal text-muted-foreground">({fmt12(leaveCutoff)})</span>
+            </Label>
+            <Input type="time" value={leaveCutoff} onChange={e => setLeaveCutoff(e.target.value)} />
+            <p className="text-xs text-muted-foreground">Early-leave fine applies if dancer leaves before this</p>
+          </div>
+
+          {/* Late arrival */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Late Arrival Cutoff
+              <span className="text-xs font-normal text-muted-foreground">({fmt12(lateArrival)})</span>
+            </Label>
+            <Input type="time" value={lateArrival} onChange={e => setLateArrival(e.target.value)} />
+            <p className="text-xs text-muted-foreground">Dancers checking in after this are charged a late fee</p>
+          </div>
+
+          {/* Day reset */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Day Reset Time
+              <span className="text-xs font-normal text-muted-foreground">({fmt12(dayReset)})</span>
+            </Label>
+            <Input type="time" value={dayReset} onChange={e => setDayReset(e.target.value)} />
+            <p className="text-xs text-muted-foreground">When the business "day" rolls over (e.g. 6 AM = tonight's shift ends)</p>
+          </div>
+        </div>
+
+        {/* Save */}
+        <Button onClick={handleSave} disabled={saving} className="w-full gap-1.5">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Timing Settings
+        </Button>
+
+        {/* Info */}
+        <div className="rounded-xl bg-secondary/40 border border-dashed border-border px-4 py-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground">
+            <strong>Open → Leave Cutoff:</strong> The "no fine" window. Dancers can leave freely during this period.
+            After the cutoff, leaving early incurs a fine. The <strong>Day Reset</strong> determines when
+            shift_date rolls over — all attendance and sessions before this time count as "tonight."
+          </p>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClubSettings() {
   return (
@@ -1074,7 +1180,10 @@ export default function ClubSettings() {
           <p className="text-muted-foreground text-sm">Manage club configuration, dancers, staff, and promo cards</p>
         </div>
 
-        {/* Row 1: Report Email */}
+        {/* Row 1: Operations & Timings */}
+        <OperationsPanel />
+
+        {/* Row 2: Report Email */}
         <ReportEmailPanel />
 
         {/* Row 2: Dancers + Staff */}

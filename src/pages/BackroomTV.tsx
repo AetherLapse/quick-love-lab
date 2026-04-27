@@ -160,7 +160,7 @@ function RoomsPanel() {
     <div className="w-full mt-4">
       <div className="flex items-center gap-2 mb-3">
         <BedDouble className="w-4 h-4 text-pink-400" />
-        <p className="text-white/50 text-xs font-bold uppercase tracking-widest">Private Rooms</p>
+        <p className="text-white/50 text-xs font-bold uppercase tracking-widest">VIP Rooms</p>
         <div className="flex-1 h-px bg-white/10" />
         <span className="text-xs text-white/30">{sessions.length} active</span>
       </div>

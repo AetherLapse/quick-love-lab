@@ -18,18 +18,20 @@ interface DancerCardProps {
   isLate: boolean;
   houseFee: number;
   danceRevenue: number;
-  outstandingBalance: number;   // carried over from previous nights
+  outstandingBalance: number;
+  amountPaid: number;
   sessions: { time: string; songs: number; amount: number }[];
 }
 
-function DancerCard({ name, checkIn, isLate, houseFee, danceRevenue, outstandingBalance, sessions }: DancerCardProps) {
+function DancerCard({ name, checkIn, isLate, houseFee, danceRevenue, outstandingBalance, amountPaid, sessions }: DancerCardProps) {
   const [open, setOpen] = useState(false);
 
   const lateFee      = isLate ? 10 : 0;
-  const effectiveHouseFee = houseFee + lateFee; // late bumps house fee from 30→50 but stored separately
+  const effectiveHouseFee = houseFee + lateFee;
   const totalFees    = effectiveHouseFee + MUSIC_FEE;
   const netPayout    = danceRevenue - totalFees;
-  const owes         = Math.max(0, -netPayout) + outstandingBalance;
+  const rawOwes      = Math.max(0, -netPayout) + outstandingBalance;
+  const owes         = Math.max(0, rawOwes - amountPaid);
   const toPay        = Math.max(0, netPayout);
 
   const paid   = owes === 0;
@@ -334,13 +336,17 @@ export function PerformersTab() {
   }, [dancers, allDancers]);
 
   // Totals
-  const totals = useMemo(() => enriched.reduce((acc, d) => ({
-    dancers: acc.dancers + 1,
-    sessions: acc.sessions + d.sessions,
-    gross: acc.gross + d.gross,
-    toPay: acc.toPay + Math.max(0, d.gross - (d.houseFee + MUSIC_FEE)),
-    owes: acc.owes + Math.max(0, (d.houseFee + MUSIC_FEE) - d.gross),
-  }), { dancers: 0, sessions: 0, gross: 0, toPay: 0, owes: 0 }), [enriched]);
+  const totals = useMemo(() => enriched.reduce((acc, d) => {
+    const rawOwes = Math.max(0, (d.houseFee + MUSIC_FEE) - d.gross);
+    const owesAfterPaid = Math.max(0, rawOwes - (d.amountPaid ?? 0));
+    return {
+      dancers: acc.dancers + 1,
+      sessions: acc.sessions + d.sessions,
+      gross: acc.gross + d.gross,
+      toPay: acc.toPay + Math.max(0, d.gross - (d.houseFee + MUSIC_FEE)),
+      owes: acc.owes + owesAfterPaid,
+    };
+  }, { dancers: 0, sessions: 0, gross: 0, toPay: 0, owes: 0 }), [enriched]);
 
   return (
     <div className="space-y-4">
@@ -389,7 +395,8 @@ export function PerformersTab() {
               {enriched.map(d => (
                 <DancerCard key={d.id} name={d.name} checkIn={d.checkIn} isLate={d.isLate}
                   houseFee={d.houseFee} danceRevenue={d.gross}
-                  outstandingBalance={d.outstandingBalance} sessions={d.sessionDetails} />
+                  outstandingBalance={d.outstandingBalance} amountPaid={d.amountPaid}
+                  sessions={d.sessionDetails} />
               ))}
             </div>
           ),

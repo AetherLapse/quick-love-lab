@@ -432,6 +432,9 @@ export function useDancerPerformance(period: Period, custom?: CustomRange) {
         const houseFee = att ? Number(att.entrance_fee_amount) : Number(d.entrance_fee);
         const netPayout = dancerCut - houseFee;
 
+        const amountPaid = att ? Number((att as any).amount_paid ?? 0) : 0;
+        const paymentStatus = att ? ((att as any).payment_status ?? "unpaid") : "unpaid";
+
         return {
           id: d.id,
           name: d.stage_name,
@@ -448,6 +451,8 @@ export function useDancerPerformance(period: Period, custom?: CustomRange) {
           houseCut,
           houseFee,
           netPayout,
+          amountPaid,
+          paymentStatus,
           sessionDetails: dancerSessions.map((s) => ({
             time: new Date(s.entry_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
             songs: s.num_songs,

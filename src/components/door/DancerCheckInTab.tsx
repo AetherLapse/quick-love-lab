@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X, Eye, EyeOff } from "lucide-react";
+import { Video, Check, DollarSign, Clock, AlertTriangle, Delete, User, Loader2, Camera, UserPlus, ArrowLeft, Search, LogOut, ShieldOff, Shield, ChevronRight, Ban, X, Eye, EyeOff, SwitchCamera } from "lucide-react";
 import { useDancerCheckIn, useCheckedInDancersToday, useDancerCheckOut, useMarkDancerPayment, EARLY_LEAVE_FINE_AMOUNT, HOUSE_FEE, MUSIC_FEE_PER_SHIFT, LATE_ARRIVAL_FEE, calcLateArrivalFee } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -169,6 +169,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [enrollFacing, setEnrollFacing] = useState<"user" | "environment">("user");
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop());
@@ -176,19 +177,28 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   }, []);
   useEffect(() => () => stopCamera(), [stopCamera]);
 
+  const startEnrollCamera = useCallback(async (mode?: "user" | "environment") => {
+    const useFacing = mode ?? enrollFacing;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: useFacing, width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+    } catch { setError("Camera unavailable."); }
+  }, [enrollFacing]);
+
   useEffect(() => {
-    if (step === "face") {
-      (async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-          });
-          streamRef.current = stream;
-          if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-        } catch { setError("Camera unavailable."); }
-      })();
-    } else stopCamera();
-  }, [step, stopCamera]);
+    if (step === "face") { startEnrollCamera(); }
+    else stopCamera();
+  }, [step, stopCamera, startEnrollCamera]);
+
+  const flipEnrollCamera = useCallback(() => {
+    const next = enrollFacing === "user" ? "environment" : "user";
+    setEnrollFacing(next);
+    stopCamera();
+    startEnrollCamera(next);
+  }, [enrollFacing, stopCamera, startEnrollCamera]);
 
   // ── Step 1: Verify bouncer PIN ─────────────────────────────────────────────
   const handleStaffPin = async () => {
@@ -533,6 +543,11 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
             </div>
+            <button onClick={flipEnrollCamera}
+              className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+              title="Switch camera">
+              <SwitchCamera className="w-4 h-4" />
+            </button>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <button onClick={handleCapture}
@@ -813,6 +828,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
   const [faceError, setFaceError] = useState<string | null>(null);
+  const [faceFacing, setFaceFacing] = useState<"user" | "environment">("user");
   const [dancerLog, setDancerLog] = useState<DancerLogEntry[]>([]);
   const [bannedInfo, setBannedInfo] = useState<{ name: string; reason: string | null; enrollId: string } | null>(null);
 
@@ -913,12 +929,13 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     [checkIn, onNewDancer]
   );
 
-  const handleFaceScan = useCallback(async () => {
+  const handleFaceScan = useCallback(async (mode?: "user" | "environment") => {
+    const useFacing = mode ?? faceFacing;
     setFaceError(null);
     setStep("face-camera");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { facingMode: useFacing, width: { ideal: 640 }, height: { ideal: 480 } },
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -929,7 +946,14 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
       setFaceError("Camera unavailable. Please use PIN.");
       setStep("face-failed");
     }
-  }, []);
+  }, [faceFacing]);
+
+  const flipFaceCamera = useCallback(() => {
+    const next = faceFacing === "user" ? "environment" : "user";
+    setFaceFacing(next);
+    stopFaceCamera();
+    handleFaceScan(next);
+  }, [faceFacing, stopFaceCamera, handleFaceScan]);
 
   const handleFaceCapture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -1121,6 +1145,11 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
               </div>
+              <button onClick={flipFaceCamera}
+                className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+                title="Switch camera">
+                <SwitchCamera className="w-4 h-4" />
+              </button>
               <p className="absolute bottom-3 inset-x-0 text-center text-xs text-white/80">
                 Center your face in the oval
               </p>

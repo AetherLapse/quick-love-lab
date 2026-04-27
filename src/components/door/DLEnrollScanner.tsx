@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
-  Camera, X, AlertCircle, Loader2, Check, AlertTriangle, CreditCard, RefreshCw,
+  Camera, X, AlertCircle, Loader2, Check, AlertTriangle, CreditCard, RefreshCw, SwitchCamera,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
@@ -46,6 +46,7 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
   const [scanResult, setScanResult] = useState<DLScanResult | null>(null);
   const [returning,  setReturning]  = useState<ReturningMatch | null>(null);
   const [cameraErr,  setCameraErr]  = useState(false);
+  const [facing,     setFacing]     = useState<"environment" | "user">("environment");
 
   useEffect(() => {
     mountedRef.current = true;
@@ -114,14 +115,15 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
     }
   }, [currentDancerId]);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (mode?: "environment" | "user") => {
+    const useFacing = mode ?? facing;
     setStep("camera");
     setCameraErr(false);
     setScanResult(null);
     setReturning(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: useFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -150,7 +152,14 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
     } catch {
       setCameraErr(true);
     }
-  }, [processBarcode]);
+  }, [processBarcode, facing]);
+
+  const flipCamera = useCallback(() => {
+    const next = facing === "environment" ? "user" : "environment";
+    setFacing(next);
+    stopCamera();
+    startCamera(next);
+  }, [facing, stopCamera, startCamera]);
 
   const captureFrame = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -183,7 +192,7 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
           <CreditCard className="w-5 h-5 shrink-0" />
           <div>
             <p className="font-semibold">Driver's License Required</p>
-            <p className="text-xs text-primary/70 mt-0.5">Scan the <strong>back</strong> of the ID — PDF417 barcode</p>
+            <p className="text-xs text-primary/70 mt-0.5">Scan the <strong>back</strong> of the ID</p>
           </div>
         </div>
         <button
@@ -204,7 +213,7 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
   if (step === "camera") {
     return (
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground text-center">Point rear camera at the <strong>back of the ID</strong> — auto-detects PDF417 barcode</p>
+        <p className="text-xs text-muted-foreground text-center">Point rear camera at the <strong>back of the ID</strong> — auto-detects barcode</p>
         <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-border">
           <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
           <canvas ref={canvasRef} className="hidden" />
@@ -232,6 +241,11 @@ export default function DLEnrollScanner({ currentDancerId, onConfirm, onBack }: 
             </div>
           )}
 
+          <button onClick={flipCamera}
+            className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+            title="Switch camera">
+            <SwitchCamera className="w-4 h-4" />
+          </button>
           <button onClick={() => { stopCamera(); setStep("idle"); }}
             className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white">
             <X className="w-3.5 h-3.5" />

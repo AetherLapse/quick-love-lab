@@ -1085,13 +1085,13 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl mb-4 flex items-center justify-center gap-3 text-lg transition-all hover:glow-gold"
             >
               <Video className="w-5 h-5" />
-              START FACE SCAN
+              Clock-in with Face Recognition
             </button>
             <button
               onClick={() => { setStep("pin"); setPin(""); setPinError(false); }}
               className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
             >
-              Use PIN Instead →
+              Clock-in with PIN →
             </button>
             <button
               onClick={handleEnrollClick}
@@ -1135,7 +1135,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               onClick={() => { stopFaceCamera(); setStep("pin"); setPin(""); }}
               className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
             >
-              Use PIN Instead →
+              Clock-in with PIN →
             </button>
           </div>
         )}

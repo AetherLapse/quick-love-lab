@@ -111,22 +111,21 @@ export function RoomsPanel() {
   // Map active by room for O(1) lookup
   const sessionByRoom = Object.fromEntries(active.map(s => [s.room_name ?? "", s]));
 
-  // Packages
-  const songPrice  = Number(settings?.song_price ?? 50);
+  // Packages from dance tiers (same as Door Panel)
   const dancerPct  = Number(settings?.default_dancer_payout_pct ?? 30) / 100;
-  const packages   = [1, 2, 3].map(songs => {
-    const gross  = songs * songPrice;
-    const dancer = Math.round(gross * dancerPct);
-    return { songs, label: `${songs} Song${songs > 1 ? "s" : ""}`, price: gross, house: gross - dancer, dancer };
+  const tierPackages = danceTiers.filter(t => t.price > 0).map(t => {
+    const dancer = Math.round(t.price * dancerPct);
+    return { tierId: t.id, songs: 1, label: t.name, price: t.price, house: t.price - dancer, dancer, durationMin: t.duration_minutes };
   });
+  const customTier = danceTiers.find(t => t.price === 0);
 
   const getActivePkg = () => {
     if (selectedPkg === null) return null;
-    if (selectedPkg < packages.length) return packages[selectedPkg];
+    if (selectedPkg < tierPackages.length) return tierPackages[selectedPkg];
     const songs = Math.max(1, customSongs);
     const gross = songs * Math.max(1, customPrice);
     const dancer = Math.round(gross * dancerPct);
-    return { songs, label: `${songs} Song${songs !== 1 ? "s" : ""} (Custom)`, price: gross, house: gross - dancer, dancer };
+    return { tierId: customTier?.id, songs, label: "Custom", price: gross, house: gross - dancer, dancer, durationMin: null };
   };
 
   useEffect(() => {
@@ -696,21 +695,22 @@ export function RoomsPanel() {
               <div>
                 <h3 className="font-heading text-3xl tracking-wide mb-4">Step 2 — Select Package</h3>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  {packages.map((pkg, i) => (
-                    <button key={i} onClick={() => setSelectedPkg(i)}
+                  {tierPackages.map((pkg, i) => (
+                    <button key={pkg.tierId ?? i} onClick={() => setSelectedPkg(i)}
                       className={`py-5 rounded-xl text-center transition-all border-2 ${selectedPkg === i ? "bg-primary/10 border-primary" : "bg-secondary/50 border-border hover:border-primary/30"}`}>
                       <p className="font-heading text-xl">{pkg.label}</p>
                       <p className="text-primary font-bold text-lg">${pkg.price}</p>
-                      <p className="text-xs text-muted-foreground mt-1">House ${pkg.house} | Dancer ${pkg.dancer}</p>
                     </button>
                   ))}
-                  <button onClick={() => setSelectedPkg(3)}
-                    className={`py-5 rounded-xl text-center transition-all border-2 col-span-2 ${selectedPkg === 3 ? "bg-primary/10 border-primary" : "bg-secondary/50 border-border hover:border-primary/30"}`}>
-                    <p className="font-heading text-xl">Custom</p>
-                    <p className="text-xs text-muted-foreground mt-1">Enter number of songs</p>
-                  </button>
+                  {customTier && (
+                    <button onClick={() => setSelectedPkg(tierPackages.length)}
+                      className={`py-5 rounded-xl text-center transition-all border-2 ${selectedPkg === tierPackages.length ? "bg-primary/10 border-primary" : "bg-secondary/50 border-border hover:border-primary/30"}`}>
+                      <p className="font-heading text-xl">Custom</p>
+                      <p className="text-xs text-muted-foreground mt-1">Enter custom amount</p>
+                    </button>
+                  )}
                 </div>
-                {selectedPkg === 3 && (() => {
+                {selectedPkg === tierPackages.length && (() => {
                   const songs = Math.max(1, customSongs);
                   const pricePerSong = Math.max(1, customPrice);
                   const gross = songs * pricePerSong;

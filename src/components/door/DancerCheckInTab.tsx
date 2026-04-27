@@ -985,7 +985,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
   }, [stopFaceCamera, performCheckIn]);
 
   const handlePinSubmit = useCallback(async () => {
-    if (pin.length !== 4) return;
+    if (pin.length < 4) return;
     try {
       const dancer = await findByPin(pin);
       if (!dancer) {
@@ -1008,7 +1008,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
     if (key === "back") {
       setPin((p) => p.slice(0, -1));
       setPinError(false);
-    } else if (key !== null && pin.length < 4) {
+    } else if (key !== null && pin.length < 8) {
       setPin((p) => p + key);
       setPinError(false);
     }
@@ -1180,12 +1180,12 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         {/* PIN PAD */}
         {step === "pin" && (
           <div className="animate-fade-in">
-            <p className="text-muted-foreground mb-5 text-center text-lg">Enter your 4-digit PIN</p>
-            <div className={`flex justify-center gap-4 mb-6 ${pinError ? "animate-shake" : ""}`}>
-              {[0, 1, 2, 3].map((i) => (
+            <p className="text-muted-foreground mb-5 text-center text-lg">Enter your PIN</p>
+            <div className={`flex justify-center gap-3 mb-6 ${pinError ? "animate-shake" : ""}`}>
+              {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className={`w-5 h-5 rounded-full border-2 transition-all ${
+                  className={`w-4 h-4 rounded-full border-2 transition-all ${
                     i < pin.length ? "bg-primary border-primary scale-110" : "border-muted-foreground/50"
                   } ${pinError ? "border-destructive bg-destructive/30" : ""}`}
                 />

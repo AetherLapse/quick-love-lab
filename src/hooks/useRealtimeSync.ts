@@ -62,6 +62,11 @@ export function useRealtimeSync() {
         qc.invalidateQueries({ queryKey: ["kiosk_sessions"] });
       })
 
+      // ── Stage sessions ──────────────────────────────────────────────────────
+      .on("postgres_changes", { event: "*", schema: "public", table: "stage_sessions" }, () => {
+        qc.invalidateQueries({ queryKey: ["stage_sessions"] });
+      })
+
       // ── Early leave codes ───────────────────────────────────────────────────
       .on("postgres_changes", { event: "*", schema: "public", table: "early_leave_codes" }, () => {
         qc.invalidateQueries({ queryKey: ["early_leave_codes_today"] });

@@ -16,6 +16,7 @@ import ClubSettings from "./pages/ClubSettings";
 import DancerLogin from "./pages/DancerLogin";
 import DancerPortal from "./pages/DancerPortal";
 import BackroomTV from "./pages/BackroomTV";
+import StageManager from "./pages/StageManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -59,6 +60,7 @@ const App = () => (
               <Route path="/dashboard" element={<RequireRole roles={[...DASHBOARD_ROLES]}><Dashboard /></RequireRole>} />
               <Route path="/door"      element={<RequireRole roles={[...DOOR_ROLES]}><DoorCheckIn /></RequireRole>} />
               <Route path="/stage"     element={<RequireRole roles={[...STAGE_ROLES]}><Dashboard defaultTab="Stage" /></RequireRole>} />
+              <Route path="/stage-manager" element={<RequireRole roles={[...STAGE_ROLES, ...DOOR_ROLES, ...ROOMS_ROLES]}><StageManager /></RequireRole>} />
               <Route path="/dancers"   element={<RequireRole roles={[...DASHBOARD_ROLES]}><Dashboard defaultTab="Performers" /></RequireRole>} />
               <Route path="/reports"   element={<RequireRole roles={[...REPORTS_ROLES]}><Dashboard defaultTab="Reports" /></RequireRole>} />
               <Route path="/logs"     element={<RequireRole roles={[...LOGS_ROLES]}><Dashboard defaultTab="Logs" /></RequireRole>} />

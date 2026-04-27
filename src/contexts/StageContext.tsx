@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface StageEntry {
   dancerId:   string;
@@ -33,12 +34,16 @@ const ROOM_GRACE_SECS    = 120; // 2 minutes grace after room session
 interface StageContextType {
   current:          StageEntry | null;
   queue:            StageEntry[];
+  waiting:          StageEntry[];
   secondsUntilNext: number;
   fines:            StageFine[];
   stageHistory:     StageHistoryEntry[];
   roomExitTimes:    Record<string, Date>;
   putOnStage:       (dancerId: string, dancerName: string) => void;
   addToQueue:       (dancerId: string, dancerName: string) => void;
+  addToWaiting:     (dancerId: string, dancerName: string) => void;
+  promoteFromWaiting: (dancerId: string) => void;
+  removeFromWaiting:  (dancerId: string) => void;
   advanceQueue:     () => void;
   offStageEarly:    () => void;
   removeFromQueue:  (dancerId: string, reason?: string) => void;
@@ -53,9 +58,44 @@ interface StageContextType {
 
 const StageContext = createContext<StageContextType | undefined>(undefined);
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function persistStageStart(dancerId: string, dancerName: string) {
+  await (supabase as any).from("stage_sessions").insert({
+    dancer_id:   dancerId,
+    dancer_name: dancerName,
+    shift_date:  todayStr(),
+    started_at:  new Date().toISOString(),
+  });
+}
+
+async function persistStageEnd(dancerId: string, endReason: string) {
+  const { data } = await (supabase as any)
+    .from("stage_sessions")
+    .select("id, started_at")
+    .eq("dancer_id", dancerId)
+    .eq("shift_date", todayStr())
+    .is("ended_at", null)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (data) {
+    const dur = Math.round((Date.now() - new Date(data.started_at).getTime()) / 1000);
+    await (supabase as any).from("stage_sessions").update({
+      ended_at:     new Date().toISOString(),
+      duration_sec: dur,
+      end_reason:   endReason,
+    }).eq("id", data.id);
+  }
+}
+
 export function StageProvider({ children }: { children: ReactNode }) {
   const [current,          setCurrent]          = useState<StageEntry | null>(null);
   const [queue,            setQueue]            = useState<StageEntry[]>([]);
+  const [waiting,          setWaiting]          = useState<StageEntry[]>([]);
   const [secondsUntilNext, setSecondsUntilNext] = useState(AUTO_ADVANCE_SECS);
   const [fines,            setFines]            = useState<StageFine[]>([]);
   const [stageHistory,     setStageHistory]     = useState<StageHistoryEntry[]>([]);
@@ -82,11 +122,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
               durationSeconds: Math.round((endTime.getTime() - finished.startTime.getTime()) / 1000),
               endReason:       "completed",
             }, ...prev]);
+            persistStageEnd(finished.dancerId, "completed");
           }
           setQueue(prev => {
             const [next, ...rest] = prev;
-            if (next) setCurrent({ ...next, startTime: new Date() });
-            else      setCurrent(null);
+            if (next) {
+              setCurrent({ ...next, startTime: new Date() });
+              persistStageStart(next.dancerId, next.dancerName);
+            } else {
+              setCurrent(null);
+            }
             return rest;
           });
           return AUTO_ADVANCE_SECS;
@@ -99,10 +144,15 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const putOnStage = useCallback((dancerId: string, dancerName: string) => {
+    if (currentRef.current) {
+      persistStageEnd(currentRef.current.dancerId, "replaced");
+    }
     setCurrent({ dancerId, dancerName, startTime: new Date() });
     setQueue(prev => prev.filter(e => e.dancerId !== dancerId));
+    setWaiting(prev => prev.filter(e => e.dancerId !== dancerId));
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
     setRoomExitTimes(prev => { const n = { ...prev }; delete n[dancerId]; return n; });
+    persistStageStart(dancerId, dancerName);
   }, []);
 
   const addToQueue = useCallback((dancerId: string, dancerName: string) => {
@@ -111,16 +161,46 @@ export function StageProvider({ children }: { children: ReactNode }) {
         ? prev
         : [...prev, { dancerId, dancerName, startTime: new Date() }]
     );
+    setWaiting(prev => prev.filter(e => e.dancerId !== dancerId));
+  }, []);
+
+  const addToWaiting = useCallback((dancerId: string, dancerName: string) => {
+    setWaiting(prev => {
+      if (prev.some(e => e.dancerId === dancerId)) return prev;
+      return [...prev, { dancerId, dancerName, startTime: new Date() }];
+    });
+  }, []);
+
+  const promoteFromWaiting = useCallback((dancerId: string) => {
+    setWaiting(prev => {
+      const entry = prev.find(e => e.dancerId === dancerId);
+      if (entry) {
+        setQueue(q =>
+          q.some(e => e.dancerId === dancerId) ? q : [...q, { ...entry, startTime: new Date() }]
+        );
+      }
+      return prev.filter(e => e.dancerId !== dancerId);
+    });
+  }, []);
+
+  const removeFromWaiting = useCallback((dancerId: string) => {
+    setWaiting(prev => prev.filter(e => e.dancerId !== dancerId));
   }, []);
 
   const advanceQueue = useCallback(() => {
+    if (currentRef.current) {
+      persistStageEnd(currentRef.current.dancerId, "advanced");
+    }
     setCurrent(null);
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
   }, []);
 
   const offStageEarly = useCallback(() => {
     setCurrent(prev => {
-      if (prev) setQueue(q => [prev, ...q]);
+      if (prev) {
+        setQueue(q => [...q, { ...prev, startTime: new Date() }]);
+        persistStageEnd(prev.dancerId, "off_stage_early");
+      }
       return null;
     });
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
@@ -160,10 +240,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
         endReason:       "skipped",
         skipReason:      reason,
       }, ...h]);
+      persistStageEnd(prev.dancerId, "skipped");
     }
     setQueue(q => {
       const [next, ...rest] = q;
-      setCurrent(next ? { ...next, startTime: new Date() } : null);
+      if (next) {
+        setCurrent({ ...next, startTime: new Date() });
+        persistStageStart(next.dancerId, next.dancerName);
+      } else {
+        setCurrent(null);
+      }
       return rest;
     });
     setSecondsUntilNext(AUTO_ADVANCE_SECS);
@@ -180,7 +266,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const setFullQueue = useCallback((entries: StageEntry[]) => setQueue(entries), []);
 
-  const clearStage = useCallback(() => setCurrent(null), []);
+  const clearStage = useCallback(() => {
+    if (currentRef.current) {
+      persistStageEnd(currentRef.current.dancerId, "cleared");
+    }
+    setCurrent(null);
+  }, []);
 
   const issueFine = useCallback((dancerId: string, dancerName: string, reason: string, amount: number) => {
     setFines(prev => [{
@@ -198,8 +289,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   return (
     <StageContext.Provider value={{
-      current, queue, secondsUntilNext, fines, stageHistory, roomExitTimes,
-      putOnStage, addToQueue, advanceQueue, offStageEarly, removeFromQueue,
+      current, queue, waiting, secondsUntilNext, fines, stageHistory, roomExitTimes,
+      putOnStage, addToQueue, addToWaiting, promoteFromWaiting, removeFromWaiting,
+      advanceQueue, offStageEarly, removeFromQueue,
       reorderQueue, setFullQueue, skipDancer, clearStage,
       issueFine, notifyRoomExit, clearFines,
     }}>

@@ -16,7 +16,7 @@ import {
   Tv2,
   ScrollText,
 } from "lucide-react";
-import { useStage, useElapsed } from "@/contexts/StageContext";
+import { useStage } from "@/contexts/StageContext";
 import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
 import { KioskLockScreen } from "@/components/KioskLockScreen";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
@@ -109,23 +109,34 @@ import logo2nyt from "@/assets/logo-2nyt.png";
 
 // ── Stage status pills ────────────────────────────────────────────────────────
 
-function QueuePill({ name, startTime }: { name: string; startTime: Date }) {
-  const elapsed = useElapsed(startTime);
+function QueuePill({ name }: { name: string }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500/15 border border-yellow-500/30 animate-pulse">
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500/15 border border-yellow-500/30">
       <Clock className="w-3 h-3 text-yellow-400 shrink-0" />
       <div className="min-w-0">
         <p className="text-[10px] text-yellow-400/80 leading-none">In Queue</p>
-        <p className="text-xs font-semibold text-yellow-300 leading-none mt-0.5 truncate">{name} · {elapsed}</p>
+        <p className="text-xs font-semibold text-yellow-300 leading-none mt-0.5 truncate">{name}</p>
+      </div>
+    </div>
+  );
+}
+
+function WaitingPill({ name }: { name: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-500/15 border border-blue-500/30">
+      <Clock className="w-3 h-3 text-blue-400 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[10px] text-blue-400/80 leading-none">Waiting</p>
+        <p className="text-xs font-semibold text-blue-300 leading-none mt-0.5 truncate">{name}</p>
       </div>
     </div>
   );
 }
 
 function StagePills() {
-  const { current, queue } = useStage();
+  const { current, queue, waiting } = useStage();
 
-  if (!current && queue.length === 0) return null;
+  if (!current && queue.length === 0 && waiting.length === 0) return null;
 
   return (
     <div className="px-3 pb-3 space-y-2">
@@ -133,23 +144,29 @@ function StagePills() {
       {current && <CurrentPill entry={current} />}
       {/* Queue (show first 2) */}
       {queue.slice(0, 2).map(entry => (
-        <QueuePill key={entry.dancerId} name={entry.dancerName} startTime={entry.startTime} />
+        <QueuePill key={entry.dancerId} name={entry.dancerName} />
       ))}
       {queue.length > 2 && (
         <p className="text-[10px] text-white/30 text-center">+{queue.length - 2} more in queue</p>
+      )}
+      {/* Waiting dancers (show first 3) */}
+      {waiting.slice(0, 3).map(entry => (
+        <WaitingPill key={entry.dancerId} name={entry.dancerName} />
+      ))}
+      {waiting.length > 3 && (
+        <p className="text-[10px] text-white/30 text-center">+{waiting.length - 3} more waiting</p>
       )}
     </div>
   );
 }
 
 function CurrentPill({ entry }: { entry: { dancerName: string; startTime: Date } }) {
-  const elapsed = useElapsed(entry.startTime);
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-500/15 border border-green-500/40 animate-pulse">
       <Mic2 className="w-3 h-3 text-green-400 shrink-0" />
       <div className="min-w-0">
         <p className="text-[10px] text-green-400/80 leading-none">On Stage</p>
-        <p className="text-xs font-semibold text-green-300 leading-none mt-0.5 truncate">{entry.dancerName} · {elapsed}</p>
+        <p className="text-xs font-semibold text-green-300 leading-none mt-0.5 truncate">{entry.dancerName}</p>
       </div>
     </div>
   );

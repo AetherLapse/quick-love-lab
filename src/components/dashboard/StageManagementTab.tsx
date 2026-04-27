@@ -469,7 +469,7 @@ export function StageManagementTab() {
   const {
     current, queue, secondsUntilNext, fines, stageHistory,
     advanceQueue, offStageEarly, removeFromQueue, reorderQueue,
-    setFullQueue, skipDancer, putOnStage, addToQueue, notifyRoomExit, clearFines,
+    setFullQueue, skipDancer, putOnStage, addToQueue, addToWaiting, notifyRoomExit, clearFines,
   } = useStage();
 
   const [showSkipPin,   setShowSkipPin]   = useState(false);
@@ -525,12 +525,12 @@ export function StageManagementTab() {
       if (!seenAttendanceRef.current.has(id)) {
         const att = attendance.find((a: any) => a.dancer_id === id);
         const name = (att?.dancers as any)?.stage_name ?? "Dancer";
-        if (!current || current.dancerId !== id) addToQueue(id, name);
+        if (!current || current.dancerId !== id) addToWaiting(id, name);
       }
     });
 
     seenAttendanceRef.current = currentIds;
-  }, [attendance, current, addToQueue]);
+  }, [attendance, current, addToWaiting]);
 
   const inRoomIds       = new Set(roomSessions.map((s: any) => s.dancer_id as string));
   const currentWithRoom = current ? { ...current, inRoom: inRoomIds.has(current.dancerId) } : null;

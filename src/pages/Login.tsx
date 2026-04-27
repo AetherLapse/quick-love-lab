@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogIn, Loader2, DoorOpen, GlassWater, Music2, ArrowLeft, Delete, ShieldCheck } from "lucide-react";
+import { LogIn, Loader2, DoorOpen, GlassWater, Music2, ArrowLeft, Delete, ShieldCheck, ListMusic } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo-2nyt.png";
 
@@ -24,15 +24,17 @@ const ROLE_REDIRECTS: Record<string, string> = {
 };
 
 const STAFF_ROLES = [
-  { label: "Login as Doorman",   icon: DoorOpen,   role: "door_staff" },
-  { label: "Login as Bartender", icon: GlassWater, role: "bartender"  },
-  { label: "Login as DJ",        icon: Music2,     role: "dj"         },
+  { label: "Login as Doorman",       icon: DoorOpen,   role: "door_staff" },
+  { label: "Login as Bartender",     icon: GlassWater, role: "bartender"  },
+  { label: "Login as DJ",            icon: Music2,     role: "dj"         },
+  { label: "Login as Stage Manager", icon: ListMusic,  role: "stage_manager" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
-  door_staff: "Doorman",
-  bartender:  "Bartender",
-  dj:         "DJ",
+  door_staff:     "Doorman",
+  bartender:      "Bartender",
+  dj:             "DJ",
+  stage_manager:  "Stage Manager",
 };
 
 // ── PIN pad ───────────────────────────────────────────────────────────────────
@@ -185,14 +187,20 @@ export default function Login() {
 
       // Wait for the session to be fully established, then fetch role
       // before navigating — same pattern as email/password login.
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: roleData } = await supabase
-          .from("user_roles").select("role")
-          .eq("user_id", session.user.id).maybeSingle();
-        navigate(roleData?.role ? (ROLE_REDIRECTS[roleData.role] ?? "/dashboard") : (ROLE_REDIRECTS[pinMode] ?? "/dashboard"));
+      // If logging in for a specific destination (e.g. stage_manager), go there directly
+      const PIN_OVERRIDES: Record<string, string> = { stage_manager: "/stage-manager" };
+      if (PIN_OVERRIDES[pinMode]) {
+        navigate(PIN_OVERRIDES[pinMode]);
       } else {
-        navigate(ROLE_REDIRECTS[pinMode] ?? "/dashboard");
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const { data: roleData } = await supabase
+            .from("user_roles").select("role")
+            .eq("user_id", session.user.id).maybeSingle();
+          navigate(roleData?.role ? (ROLE_REDIRECTS[roleData.role] ?? "/dashboard") : (ROLE_REDIRECTS[pinMode] ?? "/dashboard"));
+        } else {
+          navigate(ROLE_REDIRECTS[pinMode] ?? "/dashboard");
+        }
       }
     } catch {
       setPinError("Network error — try again");

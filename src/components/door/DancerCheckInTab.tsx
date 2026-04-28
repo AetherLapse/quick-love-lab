@@ -1105,7 +1105,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         {step === "idle" && (
           <>
             <button
-              onClick={handleFaceScan}
+              onClick={() => handleFaceScan()}
               className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl mb-4 flex items-center justify-center gap-3 text-lg transition-all hover:glow-gold"
             >
               <Video className="w-5 h-5" />
@@ -1127,7 +1127,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
                 </div>
                 <div className="text-left">
                   <p className="font-bold text-base text-primary">Enroll Dancer</p>
-                  <p className="text-xs text-primary/60">Scan ID + face to register</p>
+                  <p className="text-xs text-primary/60">Scan ID + face to register with club</p>
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-primary/40 group-hover:text-primary transition-colors" />
@@ -1199,7 +1199,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               Enter PIN
             </button>
             <button
-              onClick={handleFaceScan}
+              onClick={() => handleFaceScan()}
               className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
             >
               ← Try Face Scan Again

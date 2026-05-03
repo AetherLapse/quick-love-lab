@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
 import type { Period } from "@/components/dashboard/mockData";
+import { getClubId } from "@/lib/clubId";
 
 // ─── Date range helpers ───────────────────────────────────────────────────────
 
@@ -756,6 +757,7 @@ export function useDancerCheckIn() {
       const { data: attRow, error: attErr } = await supabase
         .from("attendance_log")
         .insert({
+          club_id: await getClubId(),
           dancer_id: dancerId,
           entrance_fee_amount: entranceFee,
           late_arrival_fee_amount: lateArrivalFee,
@@ -766,7 +768,8 @@ export function useDancerCheckIn() {
       if (attErr) throw attErr;
 
       // Append to event log
-      await supabase.from("dancer_event_log").insert({
+      await (supabase as any).from("dancer_event_log").insert({
+        club_id: await getClubId(),
         dancer_id: dancerId,
         event_type: "check_in",
         payload: { method, house_fee_applied: entranceFee, late_arrival_fee: lateArrivalFee },
@@ -877,7 +880,8 @@ export function useDancerCheckOut() {
         }).eq("id", waiverCodeId);
       }
 
-      await supabase.from("dancer_event_log").insert({
+      await (supabase as any).from("dancer_event_log").insert({
+        club_id: await getClubId(),
         dancer_id:  dancerId,
         event_type: "check_out",
         payload:    { fine, fine_waived: fineWaived, waiver_used: !!waiverCodeId },
@@ -946,6 +950,7 @@ export function useGenerateEarlyLeaveCode() {
       const { data, error } = await (supabase as any)
         .from("early_leave_codes")
         .insert({
+          club_id: await getClubId(),
           code,
           reason,
           generated_by: generatedBy,
@@ -973,6 +978,7 @@ export function useGuestCheckIn() {
   const manualAdd = useMutation({
     mutationFn: async ({ doorFee, loggedBy, tierId, guestCount = 1, vendorId, vendorName }: { doorFee: number; loggedBy: string; tierId?: string; guestCount?: number; vendorId?: string; vendorName?: string }) => {
       const { error } = await (supabase as any).from("customer_entries").insert({
+        club_id: await getClubId(),
         door_fee: doorFee,
         shift_date: today(),
         logged_by: loggedBy,
@@ -1150,7 +1156,8 @@ export function useLogRoomSession() {
       durationMinutes?: number;
     }) => {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("room_sessions").insert({
+      const { error } = await (supabase as any).from("room_sessions").insert({
+        club_id: await getClubId(),
         dancer_id: dancerId,
         room_name: roomName,
         package_name: packageName,
@@ -1414,7 +1421,7 @@ export function useBanDancer() {
         .eq("id", dancerId);
       if (error) throw error;
       await (supabase as any).from("dancer_ban_log").insert({
-        dancer_id: dancerId, action: "banned", reason, actioned_by: actionedBy,
+        club_id: await getClubId(), dancer_id: dancerId, action: "banned", reason, actioned_by: actionedBy,
       });
     },
     onSuccess: (_d, v) => {
@@ -1442,7 +1449,7 @@ export function useUnbanDancer() {
         .eq("id", dancerId);
       if (error) throw error;
       await (supabase as any).from("dancer_ban_log").insert({
-        dancer_id: dancerId, action: "unbanned", reason, actioned_by: actionedBy,
+        club_id: await getClubId(), dancer_id: dancerId, action: "unbanned", reason, actioned_by: actionedBy,
       });
     },
     onSuccess: (_d, v) => {

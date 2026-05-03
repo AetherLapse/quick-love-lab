@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -519,7 +520,7 @@ export default function DancerManagement() {
       return;
     }
     setSaving(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       stage_name: form.stage_name.trim(),
       enroll_id: form.enroll_id.trim(),
       pin_code: form.pin_code.trim(),
@@ -529,6 +530,10 @@ export default function DancerManagement() {
       email: form.email.trim(),
       phone: form.phone.trim(),
     };
+
+    if (!editId) {
+      payload.club_id = await getClubId();
+    }
 
     const { error } = editId
       ? await supabase.from("dancers").update(payload).eq("id", editId)

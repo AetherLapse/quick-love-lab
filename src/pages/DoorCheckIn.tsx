@@ -27,6 +27,7 @@ import {
   today,
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 
 const ROOM_LAYOUT = [
   { floor: "Floor 1", rooms: ["VIP Room 1", "VIP Room 2"] },
@@ -699,6 +700,7 @@ function DancerBalancesPanel() {
     try {
       await markPayment.mutateAsync({ attendanceId, amountPaid: newTotal, status: newStatus as any });
       await (supabase as any).from("payment_history").insert({
+        club_id:       await getClubId(),
         attendance_id: attendanceId,
         dancer_id:     current?.dancerId,
         amount,

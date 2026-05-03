@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import DLEnrollScanner, { type DLScanResult } from "@/components/door/DLEnrollScanner";
 import { encryptField } from "@/lib/dlScan";
+import { getClubId } from "@/lib/clubId";
 
 // ─── Ban blocked alert ────────────────────────────────────────────────────────
 function BanBlockedModal({
@@ -245,6 +246,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
     const enrollId = "D" + Date.now().toString(36).toUpperCase().slice(-6);
 
     const insertData: Record<string, any> = {
+      club_id:      await getClubId(),
       stage_name:   stageName.trim(),
       enroll_id:    enrollId,
       pin_code:     dancerPin,

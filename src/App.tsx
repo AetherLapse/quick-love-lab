@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { StageProvider } from "@/contexts/StageContext";
+import { ClubProvider } from "@/contexts/ClubContext";
 import RequireRole from "@/components/RequireRole";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -44,6 +45,7 @@ const BACKROOM_ROLES = ["admin", "owner", "manager", "backroom_tv", "bartender",
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      <ClubProvider>
       <StageProvider>
         <TooltipProvider>
           <Toaster />
@@ -75,6 +77,7 @@ const App = () => (
           </BrowserRouter>
         </TooltipProvider>
       </StageProvider>
+      </ClubProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

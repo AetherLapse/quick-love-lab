@@ -7,6 +7,7 @@ import {
 import { PanelStack } from "./DraggablePanels";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -597,7 +598,7 @@ export function SettingsTab() {
       return;
     }
     setSaving(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       stage_name: form.stage_name.trim(),
       enroll_id: form.enroll_id.trim(),
       pin_code: form.pin_code.trim(),
@@ -607,6 +608,10 @@ export function SettingsTab() {
       email: form.email.trim(),
       phone: form.phone.trim(),
     };
+
+    if (!editId) {
+      payload.club_id = await getClubId();
+    }
 
     const { error } = editId
       ? await supabase.from("dancers").update(payload).eq("id", editId)

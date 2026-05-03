@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 
 export interface StageEntry {
   dancerId:   string;
@@ -64,6 +65,7 @@ function todayStr() {
 
 async function persistStageStart(dancerId: string, dancerName: string) {
   await (supabase as any).from("stage_sessions").insert({
+    club_id:     await getClubId(),
     dancer_id:   dancerId,
     dancer_name: dancerName,
     shift_date:  todayStr(),

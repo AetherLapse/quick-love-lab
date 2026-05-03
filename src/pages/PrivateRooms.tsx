@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useDashboardData";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 import { toast } from "sonner";
 
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
@@ -171,6 +172,7 @@ export function RoomsPanel() {
       if (!pkg) throw new Error("Missing selection");
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("room_sessions").insert({
+        club_id:      await getClubId(),
         dancer_id:    selectedDancerId,
         room_name:    buildRoomName(roomFloor, roomName),
         entry_time:   new Date().toISOString(),

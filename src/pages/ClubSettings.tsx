@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { getClubId } from "@/lib/clubId";
 import {
   Settings, Save, UserPlus, Users,
   Loader2, Eye, EyeOff, Check, ShieldCheck, Mic2,
@@ -102,6 +103,7 @@ function AddDancerModal({ open, onClose, onSuccess }: {
   const submit = async () => {
     setSaving(true);
     const { error } = await (supabase as any).from("dancers").insert({
+      club_id:           await getClubId(),
       full_name:         fullName.trim(),
       stage_name:        fullName.trim(), // mirrors full_name until dancer sets own stage name via portal
       email:             email.trim().toLowerCase(),
@@ -245,7 +247,7 @@ function AddStaffModal({ open, onClose, onSuccess }: {
     if (error || !data.user) {
       setSaving(false); toast.error(error?.message ?? "Account creation failed"); return;
     }
-    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ user_id: data.user.id, role });
+    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ club_id: await getClubId(), user_id: data.user.id, role });
     setSaving(false);
     if (roleErr) { toast.error(roleErr.message); return; }
     toast.success(`Staff account created for ${name}`);
@@ -376,7 +378,7 @@ function StageNamesSection({
     setAdding(true); setError(null);
     const { data, error: err } = await (supabase as any)
       .from("dancer_stage_names")
-      .insert({ dancer_id: dancerId, name: trimmed, is_active: false })
+      .insert({ club_id: await getClubId(), dancer_id: dancerId, name: trimmed, is_active: false })
       .select("id, name, is_active")
       .single();
     setAdding(false);
@@ -631,7 +633,7 @@ function EditStaffModal({ member, onClose, onSuccess }: {
 
     // Update role
     await supabase.from("user_roles").delete().eq("user_id", member.user_id);
-    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ user_id: member.user_id, role });
+    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ club_id: await getClubId(), user_id: member.user_id, role });
     if (roleErr) { setSaving(false); toast.error(roleErr.message); return; }
 
     // Save PIN — available for all roles

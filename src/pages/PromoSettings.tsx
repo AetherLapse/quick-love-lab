@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getClubId } from "@/lib/clubId";
 import { toast } from "sonner";
 import QRCode from "qrcode";
 import {
@@ -102,6 +103,7 @@ export function CodeCreationPanel() {
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await (supabase as any).from("promo_codes").insert({
+      club_id: await getClubId(),
       code: code.trim().toUpperCase(),
       label: label.trim() || null,
       entry_tier_id: tierId,
@@ -245,7 +247,7 @@ export function VendorPanel() {
   const handleSave = async () => {
     if (!name.trim()) { toast.error("Vendor name is required"); return; }
     setSaving(true);
-    const payload = { name: name.trim(), contact_name: contact.trim() || null, phone: phone.trim() || null, commission_rate: parseFloat(commission) || 0 };
+    const payload = { club_id: await getClubId(), name: name.trim(), contact_name: contact.trim() || null, phone: phone.trim() || null, commission_rate: parseFloat(commission) || 0 };
     const { error } = editing
       ? await (supabase as any).from("vendors").update(payload).eq("id", editing.id)
       : await (supabase as any).from("vendors").insert(payload);

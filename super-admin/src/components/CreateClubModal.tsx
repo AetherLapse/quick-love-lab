@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { adminClient } from "@/lib/supabase";
-import { X, Loader2, Building2, Globe, Mail, Lock } from "lucide-react";
+import { X, Loader2, Building2, Globe, Mail, Lock, Upload, Image } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -16,6 +16,9 @@ export function CreateClubModal({ onClose, onCreated }: Props) {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminName, setAdminName] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
 
   const autoSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -36,12 +39,26 @@ export function CreateClubModal({ onClose, onCreated }: Props) {
     setSaving(true);
     try {
       // 1. Insert club
+      const finalSlug = slug.trim() || autoSlug(clubName);
+      let logoUrl: string | null = null;
+
+      // Upload logo if provided
+      if (logoFile) {
+        const ext = logoFile.name.split(".").pop() ?? "png";
+        const path = `${finalSlug}/logo.${ext}`;
+        const { error: uploadErr } = await adminClient.storage.from("club-logos").upload(path, logoFile, { upsert: true });
+        if (uploadErr) throw new Error(`Logo upload failed: ${uploadErr.message}`);
+        const { data: urlData } = adminClient.storage.from("club-logos").getPublicUrl(path);
+        logoUrl = urlData.publicUrl;
+      }
+
       const { data: club, error: clubErr } = await adminClient
         .from("clubs")
         .insert({
           name: clubName.trim(),
-          slug: slug.trim() || autoSlug(clubName),
+          slug: finalSlug,
           domain: domain.trim() || null,
+          logo_url: logoUrl,
           owner_email: adminEmail.trim(),
           status: "active",
         })
@@ -164,6 +181,32 @@ export function CreateClubModal({ onClose, onCreated }: Props) {
                   className="w-full px-4 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 text-sm font-mono"
                 />
               </div>
+
+              {/* Logo upload */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Club Logo</label>
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); }
+                  }} />
+                {logoPreview ? (
+                  <div className="flex items-center gap-3">
+                    <img src={logoPreview} alt="Logo" className="w-14 h-14 rounded-xl object-cover border border-gray-700" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{logoFile?.name}</p>
+                      <p className="text-xs text-gray-500">{((logoFile?.size ?? 0) / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <button onClick={() => { setLogoFile(null); setLogoPreview(null); if (fileRef.current) fileRef.current.value = ""; }}
+                      className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => fileRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-700 hover:border-brand-500/50 text-gray-500 hover:text-gray-300 transition-all text-sm">
+                    <Upload className="w-4 h-4" /> Upload Logo (max 2MB)
+                  </button>
+                )}
+              </div>
             </>
           )}
 
@@ -211,6 +254,12 @@ export function CreateClubModal({ onClose, onCreated }: Props) {
           {step === 2 && (
             <div className="space-y-3">
               <p className="text-sm font-semibold text-white mb-3">Review & Create</p>
+              {logoPreview && (
+                <div className="flex items-center gap-3 mb-2">
+                  <img src={logoPreview} alt="Logo" className="w-12 h-12 rounded-xl object-cover border border-gray-700" />
+                  <span className="text-sm text-gray-400">Club logo</span>
+                </div>
+              )}
               {[
                 ["Club", clubName],
                 ["Domain", domain || "(none)"],

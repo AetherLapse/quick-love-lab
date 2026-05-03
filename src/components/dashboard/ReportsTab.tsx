@@ -229,13 +229,13 @@ export function ReportsTab() {
 
   // ── Derived metrics ──────────────────────────────────────────────────────────
   const metrics = useMemo(() => {
-    const doorRevenue = visits.reduce((s, v) => s + (v.door_fee ?? 0), 0);
+    const doorRevenue = (entries as any[]).reduce((s: number, e: any) => s + Number(e.door_fee ?? 0), 0);
     const roomGross   = sessions.reduce((s, r) => s + (r.gross_amount ?? 0), 0);
     const roomHouse   = sessions.reduce((s, r) => s + (r.house_cut ?? 0), 0);
     const roomDancer  = sessions.reduce((s, r) => s + (r.dancer_cut ?? 0), 0);
     const houseNet    = doorRevenue + roomHouse;
     const gross       = doorRevenue + roomGross;
-    const totalGuests = visits.length;
+    const totalGuests = (entries as any[]).reduce((s: number, e: any) => s + Number(e.guest_count ?? 1), 0);
     const returning   = (visits as any[]).filter((v) => v.guests?.is_returning).length;
 
     const closedSessions = sessions.filter((s) => s.exit_time);
@@ -281,7 +281,7 @@ export function ReportsTab() {
     const owingDancers = payout.filter((d) => d.net < 0).sort((a, b) => a.net - b.net);
 
     return { doorRevenue, roomGross, roomHouse, roomDancer, houseNet, gross, totalGuests, returning, avgMin, payout, owingDancers };
-  }, [sessions, visits, logs, dancers]);
+  }, [sessions, visits, logs, dancers, entries]);
 
   // Sessions/attendance for selected dancer
   const selectedDancerSessions: SessionRow[] = useMemo(() => {
@@ -338,7 +338,7 @@ export function ReportsTab() {
   const exportFullReport = () => {
     downloadCSV(`revenue-${start}-to-${end}.csv`,
       ["Period", "Door Revenue", "Room Revenue", "House Cut", "House Net", "Dancer Payouts", "Total Guests", "Sessions"],
-      [[[start === end ? start : `${start} to ${end}`, metrics.doorRevenue.toFixed(2), metrics.roomGross.toFixed(2), metrics.roomHouse.toFixed(2), metrics.houseNet.toFixed(2), metrics.roomDancer.toFixed(2), metrics.totalGuests, sessions.length]]]
+      [[[start === end ? start : `${start} to ${end}`, metrics.doorRevenue.toFixed(2), metrics.roomGross.toFixed(2), metrics.roomHouse.toFixed(2), metrics.houseNet.toFixed(2), metrics.roomDancer.toFixed(2), String(metrics.totalGuests), String(sessions.length)]]]
     );
     toast.success("Revenue report downloaded");
   };

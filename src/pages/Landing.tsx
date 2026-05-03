@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { ShieldCheck, LogIn } from "lucide-react";
-import logo from "@/assets/logo-2nyt.png";
+import { useClub } from "@/contexts/ClubContext";
+import defaultLogo from "@/assets/logo-2nyt.png";
 
 const TAGLINES = [
   "Venue Intelligence Built from the Floor Up!",
@@ -10,6 +11,7 @@ const TAGLINES = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { clubName, clubLogo } = useClub();
   const [taglineIndex, setTaglineIndex] = useState(0);
 
   useEffect(() => {
@@ -18,6 +20,9 @@ export default function Landing() {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const logo = clubLogo || defaultLogo;
+  const name = clubName || "2NYT ENTERTAINMENT";
 
   return (
     <div
@@ -33,11 +38,11 @@ export default function Landing() {
         <div className="flex flex-col items-center text-center">
           <img
             src={logo}
-            alt="2NYT Entertainment"
+            alt={name}
             className="h-36 md:h-44 w-auto drop-shadow-md mb-5 animate-float"
           />
           <h1 className="text-2xl md:text-3xl font-extrabold leading-tight tracking-tight text-foreground">
-            2NYT ENTERTAINMENT
+            {name}
           </h1>
           <div className="h-6 overflow-hidden mt-2">
             <p

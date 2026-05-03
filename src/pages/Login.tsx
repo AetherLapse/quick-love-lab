@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogIn, Loader2, DoorOpen, GlassWater, Music2, ArrowLeft, Delete, ShieldCheck, ListMusic } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import logo from "@/assets/logo-2nyt.png";
+import { useClub } from "@/contexts/ClubContext";
+import defaultLogo from "@/assets/logo-2nyt.png";
 
 const SUPABASE_URL  = "https://fwinnniiugjfmpkgybyu.supabase.co";
 const ANON_KEY      = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
@@ -90,6 +91,9 @@ function PinPad({ value, onChange }: { value: string; onChange: (v: string) => v
 
 export default function Login() {
   const navigate = useNavigate();
+  const { clubName, clubLogo } = useClub();
+  const logo = clubLogo || defaultLogo;
+  const venueName = clubName || "2NYT ENTERTAINMENT";
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -228,9 +232,9 @@ export default function Login() {
         className="hidden md:flex flex-col items-center justify-center w-80 px-10 shrink-0"
         style={{ background: "hsl(240 18% 10%)" }}
       >
-        <img src={logo} alt="2NYT Entertainment" className="h-36 w-auto drop-shadow-lg mb-5 animate-float" />
+        <img src={logo} alt={venueName} className="h-36 w-auto drop-shadow-lg mb-5 animate-float" />
         <h2 className="text-white text-lg font-extrabold tracking-tight text-center mb-2">
-          2NYT ENTERTAINMENT
+          {venueName}
         </h2>
         <p key={taglineIndex} className="text-primary text-sm font-medium tracking-wide text-center animate-tagline-in">
           {TAGLINES[taglineIndex]}
@@ -247,8 +251,8 @@ export default function Login() {
         <div className={`w-full max-w-sm ${shake ? "animate-shake" : ""}`}>
           {/* Mobile logo */}
           <div className="md:hidden flex flex-col items-center mb-10">
-            <img src={logo} alt="2NYT" className="h-20 w-auto animate-float mb-3" />
-            <p className="text-sm font-bold text-foreground">2NYT ENTERTAINMENT</p>
+            <img src={logo} alt={venueName} className="h-20 w-auto animate-float mb-3" />
+            <p className="text-sm font-bold text-foreground">{venueName}</p>
           </div>
 
           {/* ── PIN mode ── */}

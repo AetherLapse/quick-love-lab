@@ -17,6 +17,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import { useStage } from "@/contexts/StageContext";
+import { useClub } from "@/contexts/ClubContext";
 import { useKioskHeartbeat } from "@/hooks/useKioskHeartbeat";
 import { KioskLockScreen } from "@/components/KioskLockScreen";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
@@ -105,7 +106,7 @@ const ROLE_LABELS: Record<string, string> = {
   dj:             "DJ",
 };
 
-import logo2nyt from "@/assets/logo-2nyt.png";
+import defaultLogo from "@/assets/logo-2nyt.png";
 
 // ── Stage status pills ────────────────────────────────────────────────────────
 
@@ -179,6 +180,8 @@ function Sidebar({
   onNavigate,
   onSignOut,
   currentPath,
+  logo,
+  venueName,
 }: {
   filteredNav: NavItem[];
   role: string | null;
@@ -186,6 +189,8 @@ function Sidebar({
   onNavigate: (path: string) => void;
   onSignOut: () => void;
   currentPath: string;
+  logo: string;
+  venueName: string;
 }) {
   return (
     <div
@@ -194,9 +199,9 @@ function Sidebar({
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <img src={logo2nyt} alt="2NYT Logo" className="w-9 h-9 rounded-full object-cover shrink-0" />
+        <img src={logo} alt="Logo" className="w-9 h-9 rounded-full object-cover shrink-0" />
         <div className="min-w-0">
-          <p className="text-white text-sm font-semibold leading-none">2NYT ENTERTAINMENT</p>
+          <p className="text-white text-sm font-semibold leading-none">{venueName}</p>
           <p className="text-white/40 text-xs mt-0.5">Venue Intelligence</p>
         </div>
       </div>
@@ -274,6 +279,9 @@ function Sidebar({
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { role, user, signOut } = useAuth();
+  const { clubName, clubLogo } = useClub();
+  const logo = clubLogo || defaultLogo;
+  const venueName = clubName || "2NYT Entertainment";
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -297,6 +305,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     onNavigate: handleNavigate,
     onSignOut: async () => { await signOut(); navigate("/login"); },
     currentPath: location.pathname,
+    logo,
+    venueName,
   };
 
   return (
@@ -333,7 +343,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           >
             <Menu className="w-6 h-6" />
           </button>
-          <span className="text-white text-base font-semibold">2NYT Entertainment</span>
+          <span className="text-white text-base font-semibold">{venueName}</span>
         </header>
 
         <main className="flex-1 overflow-y-auto">

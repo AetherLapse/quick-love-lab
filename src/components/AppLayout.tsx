@@ -279,7 +279,7 @@ function Sidebar({
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { role, user, signOut } = useAuth();
-  const { clubName, clubLogo } = useClub();
+  const { clubName, clubLogo, resolved } = useClub();
   const logo = clubLogo || defaultLogo;
   const venueName = clubName || "2NYT Entertainment";
   const navigate = useNavigate();
@@ -344,6 +344,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Menu className="w-6 h-6" />
           </button>
           <span className="text-white text-base font-semibold">{venueName}</span>
+          {resolved === "fallback" && <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60" title="Fallback branding — domain not resolved" />}
         </header>
 
         <main className="flex-1 overflow-y-auto">

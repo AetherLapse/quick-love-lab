@@ -1,21 +1,25 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+type ResolveMethod = "domain" | "jwt" | "fallback";
+
 interface ClubContextType {
   clubId: string | null;
   clubName: string | null;
   clubLogo: string | null;
+  resolved: ResolveMethod;
   loading: boolean;
 }
 
 const ClubContext = createContext<ClubContextType>({
-  clubId: null, clubName: null, clubLogo: null, loading: true,
+  clubId: null, clubName: null, clubLogo: null, resolved: "fallback", loading: true,
 });
 
 export function ClubProvider({ children }: { children: ReactNode }) {
   const [clubId, setClubId] = useState<string | null>(null);
   const [clubName, setClubName] = useState<string | null>(null);
   const [clubLogo, setClubLogo] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<ResolveMethod>("fallback");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,6 +38,7 @@ export function ClubProvider({ children }: { children: ReactNode }) {
           setClubId(club.id);
           setClubName(club.name ?? null);
           setClubLogo(club.logo_url ?? null);
+          setResolved("domain");
           setLoading(false);
           return;
         }
@@ -44,6 +49,7 @@ export function ClubProvider({ children }: { children: ReactNode }) {
       const id = session?.user?.app_metadata?.club_id as string | undefined;
       if (id) {
         setClubId(id);
+        setResolved("jwt");
         const { data: club } = await (supabase as any)
           .from("clubs")
           .select("id, name, logo_url")
@@ -81,7 +87,7 @@ export function ClubProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ClubContext.Provider value={{ clubId, clubName, clubLogo, loading }}>
+    <ClubContext.Provider value={{ clubId, clubName, clubLogo, resolved, loading }}>
       {children}
     </ClubContext.Provider>
   );

@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email, password, full_name, role, pin_code } = await req.json();
+    const { email, password, full_name, role, pin_code, club_id } = await req.json();
 
     if (!email || !password || !full_name || !role) {
       return new Response(JSON.stringify({ error: "email, password, full_name, and role are required" }), {
@@ -34,12 +34,13 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Create auth user (email pre-confirmed)
+    // Create auth user (email pre-confirmed, club_id in app_metadata)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: { full_name },
+      ...(club_id ? { app_metadata: { club_id } } : {}),
     });
 
     if (authError) throw authError;
@@ -49,7 +50,7 @@ serve(async (req) => {
     // Insert role
     const { error: roleError } = await supabaseAdmin
       .from("user_roles")
-      .insert({ user_id: userId, role });
+      .insert({ user_id: userId, role, ...(club_id ? { club_id } : {}) });
 
     if (roleError) {
       await supabaseAdmin.auth.admin.deleteUser(userId);

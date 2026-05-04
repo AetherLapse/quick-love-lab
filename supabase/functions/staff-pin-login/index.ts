@@ -84,14 +84,20 @@ serve(async (req) => {
       );
     }
 
+    // Get club_id from user's app_metadata
+    const clubId = user.app_metadata?.club_id;
+
     // Record check-in using the staff member's actual role
     const today = new Date().toISOString().split("T")[0];
-    await admin.from("staff_attendance").insert({
-      profile_id: profile.id,
-      role:       actualRole,
-      shift_date: today,
-      clock_in:   new Date().toISOString(),
-    });
+    if (clubId) {
+      await admin.from("staff_attendance").insert({
+        club_id:    clubId,
+        profile_id: profile.id,
+        role:       actualRole,
+        shift_date: today,
+        clock_in:   new Date().toISOString(),
+      });
+    }
 
     // Return the hashed_token — the client will call verifyOtp to exchange it for a session
     return new Response(

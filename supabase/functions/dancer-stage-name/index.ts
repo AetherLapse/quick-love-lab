@@ -52,9 +52,13 @@ serve(async (req) => {
       if (trimmed.length < 2)  return json({ error: "Name must be at least 2 characters" }, 400);
       if (trimmed.length > 30) return json({ error: "Name must be 30 characters or less" }, 400);
 
+      // Get club_id from the dancer record
+      const { data: dancer } = await db.from("dancers").select("club_id").eq("id", dancer_id).single();
+      const club_id = (dancer as any)?.club_id;
+
       const { data: inserted, error: insertErr } = await db
         .from("dancer_stage_names")
-        .insert({ dancer_id, name: trimmed, is_active: false })
+        .insert({ dancer_id, name: trimmed, is_active: false, ...(club_id ? { club_id } : {}) })
         .select("id, name, is_active, created_at")
         .single();
 

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { setClubId as setCachedClubId } from "@/lib/clubId";
 
 type ResolveMethod = "domain" | "fallback";
 
@@ -41,6 +42,7 @@ export function ClubProvider({ children }: { children: ReactNode }) {
           setClubName(club.name ?? null);
           setClubLogo(club.logo_url ?? null);
           setResolved("domain");
+          setCachedClubId(club.id);
         }
         setLoading(false);
       });

@@ -953,23 +953,25 @@ function StaffPanel() {
                     ? <ToggleRight className="w-5 h-5 text-primary" />
                     : <ToggleLeft className="w-5 h-5" />}
                 </button>
-                {confirmDelete === s.user_id ? (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => deleteStaff(s.user_id)}
-                      className="px-2 py-1 rounded-lg bg-destructive text-white text-xs font-bold hover:opacity-90 transition-all">
-                      Confirm
+                {s.role !== "admin" && s.role !== "owner" && (
+                  confirmDelete === s.user_id ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => deleteStaff(s.user_id)}
+                        className="px-2 py-1 rounded-lg bg-destructive text-white text-xs font-bold hover:opacity-90 transition-all">
+                        Confirm
+                      </button>
+                      <button onClick={() => setConfirmDelete(null)}
+                        className="px-2 py-1 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-all">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(s.user_id)}
+                      title="Delete staff"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setConfirmDelete(null)}
-                      className="px-2 py-1 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-all">
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setConfirmDelete(s.user_id)}
-                    title="Delete staff"
-                    className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  )
                 )}
               </div>
             ))}

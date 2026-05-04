@@ -124,7 +124,7 @@ export default function Login() {
     setLoading(true);
     setError("");
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError) {
       setLoading(false);
@@ -133,11 +133,10 @@ export default function Login() {
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
+    if (authData?.user) {
       const { data } = await supabase
         .from("user_roles").select("role")
-        .eq("user_id", session.user.id).maybeSingle();
+        .eq("user_id", authData.user.id).maybeSingle();
       navigate(data?.role ? (ROLE_REDIRECTS[data.role] ?? "/dashboard") : "/dashboard");
     }
     setLoading(false);

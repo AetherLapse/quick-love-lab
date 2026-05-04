@@ -25,15 +25,11 @@ export default function DemoLogin({ role, children }: DemoLoginProps) {
   const creds = DEMO_CREDENTIALS[role];
   const label = role === "admin" ? "Admin Dashboard" : "Manager View";
 
-  // Check for existing Supabase session on mount
+  // Check for existing session via onAuthStateChange (INITIAL_SESSION fires on mount)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setAuthenticated(true);
-      setChecking(false);
-    });
-
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthenticated(!!session);
+      setChecking(false);
     });
     return () => listener.subscription.unsubscribe();
   }, []);

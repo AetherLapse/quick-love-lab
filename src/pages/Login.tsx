@@ -177,7 +177,7 @@ export default function Login() {
       }
 
       // Exchange the token hash for a real Supabase session
-      const { error: verifyErr } = await supabase.auth.verifyOtp({
+      const { data: otpData, error: verifyErr } = await supabase.auth.verifyOtp({
         token_hash: data.token_hash,
         type: "email",
       });
@@ -189,22 +189,16 @@ export default function Login() {
         return;
       }
 
-      // Wait for the session to be fully established, then fetch role
-      // before navigating — same pattern as email/password login.
-      // If logging in for a specific destination (e.g. stage_manager), go there directly
       const PIN_OVERRIDES: Record<string, string> = { stage_manager: "/stage-manager" };
       if (PIN_OVERRIDES[pinMode]) {
         navigate(PIN_OVERRIDES[pinMode]);
+      } else if (otpData?.user) {
+        const { data: roleData } = await supabase
+          .from("user_roles").select("role")
+          .eq("user_id", otpData.user.id).maybeSingle();
+        navigate(roleData?.role ? (ROLE_REDIRECTS[roleData.role] ?? "/dashboard") : (ROLE_REDIRECTS[pinMode] ?? "/dashboard"));
       } else {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const { data: roleData } = await supabase
-            .from("user_roles").select("role")
-            .eq("user_id", session.user.id).maybeSingle();
-          navigate(roleData?.role ? (ROLE_REDIRECTS[roleData.role] ?? "/dashboard") : (ROLE_REDIRECTS[pinMode] ?? "/dashboard"));
-        } else {
-          navigate(ROLE_REDIRECTS[pinMode] ?? "/dashboard");
-        }
+        navigate(ROLE_REDIRECTS[pinMode] ?? "/dashboard");
       }
     } catch {
       setPinError("Network error — try again");

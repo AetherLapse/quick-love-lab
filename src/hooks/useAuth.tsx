@@ -69,21 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auth state — init + subscribe
+  // Auth state — onAuthStateChange fires INITIAL_SESSION on mount (no lock contention)
   useEffect(() => {
-    // Restore existing session on mount — await role before clearing loading
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        const { data } = await supabase
-          .from("user_roles").select("role")
-          .eq("user_id", session.user.id).maybeSingle();
-        setRole(data?.role ?? null);
-      }
-      setLoading(false);
-    });
-
-    // React to future login / logout / token-refresh events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user ?? null;
       setUser(nextUser);
@@ -92,8 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      // Hold loading=true until the role is resolved so RequireRole never
-      // sees a logged-in user with role=null and bounces them to /login.
       setLoading(true);
       supabase.from("user_roles").select("role")
         .eq("user_id", nextUser.id).maybeSingle()

@@ -22,32 +22,37 @@ export function ClubProvider({ children }: { children: ReactNode }) {
   const [resolved, setResolved] = useState<ResolveMethod>("fallback");
   const [loading, setLoading] = useState(true);
 
+  // Domain-based resolution (runs once on mount, no auth needed)
   useEffect(() => {
-    const resolve = async () => {
-      // 1. Try domain-based resolution (works before login)
-      const hostname = window.location.hostname;
-      if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-        const { data: club } = await (supabase as any)
-          .from("clubs")
-          .select("id, name, logo_url")
-          .eq("domain", hostname)
-          .eq("status", "active")
-          .maybeSingle();
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      setLoading(false);
+      return;
+    }
 
-        if (club) {
-          setClubId(club.id);
-          setClubName(club.name ?? null);
-          setClubLogo(club.logo_url ?? null);
-          setResolved("domain");
-          setLoading(false);
-          return;
-        }
+    (async () => {
+      const { data: club } = await (supabase as any)
+        .from("clubs")
+        .select("id, name, logo_url")
+        .eq("domain", hostname)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (club) {
+        setClubId(club.id);
+        setClubName(club.name ?? null);
+        setClubLogo(club.logo_url ?? null);
+        setResolved("domain");
       }
+      setLoading(false);
+    })();
+  }, []);
 
-      // 2. Fall back to JWT (post-login)
-      const { data: { session } } = await supabase.auth.getSession();
+  // JWT-based resolution (fires when user logs in/out — no getSession() race)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const id = session?.user?.app_metadata?.club_id as string | undefined;
-      if (id) {
+      if (id && !clubId) {
         setClubId(id);
         setResolved("jwt");
         const { data: club } = await (supabase as any)
@@ -59,32 +64,18 @@ export function ClubProvider({ children }: { children: ReactNode }) {
           setClubName(club.name ?? null);
           setClubLogo(club.logo_url ?? null);
         }
-      }
-      setLoading(false);
-    };
-
-    resolve();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const id = session?.user?.app_metadata?.club_id as string | undefined;
-      if (id && !clubId) {
-        setClubId(id);
-        const { data: club } = await (supabase as any)
-          .from("clubs")
-          .select("id, name, logo_url")
-          .eq("id", id)
-          .maybeSingle();
-        if (club) {
-          setClubName(club.name ?? null);
-          setClubLogo(club.logo_url ?? null);
+      } else if (!session) {
+        if (resolved !== "domain") {
+          setClubId(null);
+          setClubName(null);
+          setClubLogo(null);
+          setResolved("fallback");
         }
-      } else if (!id) {
-        setClubId(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [clubId, resolved]);
 
   return (
     <ClubContext.Provider value={{ clubId, clubName, clubLogo, resolved, loading }}>

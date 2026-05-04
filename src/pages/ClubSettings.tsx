@@ -240,18 +240,23 @@ function AddStaffModal({ open, onClose, onSuccess }: {
 
   const submit = async () => {
     setSaving(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(), password,
-      options: { data: { full_name: name.trim() } },
-    });
-    if (error || !data.user) {
-      setSaving(false); toast.error(error?.message ?? "Account creation failed"); return;
+    try {
+      const clubId = await getClubId();
+      const ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) as string;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL ?? "https://fwinnniiugjfmpkgybyu.supabase.co"}/functions/v1/create-staff-user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": ANON_KEY, "Authorization": `Bearer ${ANON_KEY}` },
+        body: JSON.stringify({ email: email.trim(), password, full_name: name.trim(), role, club_id: clubId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { toast.error(data.error ?? "Account creation failed"); return; }
+      toast.success(`Staff account created for ${name}`);
+      reset(); onSuccess(); onClose();
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to create staff");
+    } finally {
+      setSaving(false);
     }
-    const { error: roleErr } = await (supabase as any).from("user_roles").insert({ club_id: await getClubId(), user_id: data.user.id, role });
-    setSaving(false);
-    if (roleErr) { toast.error(roleErr.message); return; }
-    toast.success(`Staff account created for ${name}`);
-    reset(); onSuccess(); onClose();
   };
 
   const STEPS = ["Identity", "Password", "Role"];

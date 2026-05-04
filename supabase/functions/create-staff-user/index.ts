@@ -57,8 +57,8 @@ serve(async (req) => {
       throw roleError;
     }
 
-    // Store PIN for door_staff
-    if (role === "door_staff" && pin_code) {
+    // Store PIN if provided
+    if (pin_code) {
       await supabaseAdmin
         .from("profiles")
         .update({ pin_code })

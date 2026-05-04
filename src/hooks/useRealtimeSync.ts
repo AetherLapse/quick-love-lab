@@ -51,6 +51,11 @@ export function useRealtimeSync() {
         qc.invalidateQueries({ queryKey: ["dancers_active"] });
       })
 
+      // ── Stage queue (server-side rotation state) ───────────────────────────
+      .on("postgres_changes", { event: "*", schema: "public", table: "stage_queue" }, () => {
+        qc.invalidateQueries({ queryKey: ["stage_queue"] });
+      })
+
       // ── Stage fines ─────────────────────────────────────────────────────────
       .on("postgres_changes", { event: "*", schema: "public", table: "stage_fines" }, () => {
         qc.invalidateQueries({ queryKey: ["attendance_log"] });

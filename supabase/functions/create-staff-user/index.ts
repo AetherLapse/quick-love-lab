@@ -47,6 +47,18 @@ serve(async (req) => {
 
     const userId = authData.user.id;
 
+    // Ensure profile exists (trigger may not fire for admin.createUser)
+    const { data: existingProfile } = await supabaseAdmin
+      .from("profiles").select("user_id").eq("user_id", userId).maybeSingle();
+    if (!existingProfile) {
+      await supabaseAdmin.from("profiles").insert({
+        user_id: userId,
+        full_name: full_name,
+        is_active: true,
+        ...(club_id ? { club_id } : {}),
+      });
+    }
+
     // Insert role
     const { error: roleError } = await supabaseAdmin
       .from("user_roles")

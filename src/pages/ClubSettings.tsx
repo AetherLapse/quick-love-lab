@@ -11,7 +11,7 @@ import {
   Settings, Save, UserPlus, Users,
   Loader2, Eye, EyeOff, Check, ShieldCheck, Mic2,
   ToggleLeft, ToggleRight, ArrowLeft, ArrowRight, Pencil, AlertCircle, Plus, X,
-  Mail, Send, Clock,
+  Mail, Send, Clock, Trash2,
 } from "lucide-react";
 
 type AppRole = "owner" | "admin" | "manager" | "door_staff" | "room_attendant" | "house_mom" | "bartender" | "dj" | "backroom_tv";
@@ -855,6 +855,7 @@ function StaffPanel() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState<StaffMember | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -885,6 +886,24 @@ function StaffPanel() {
       return;
     }
     toast.success(current ? "Staff deactivated" : "Staff activated");
+  };
+
+  const deleteStaff = async (userId: string) => {
+    const member = staff.find(s => s.user_id === userId);
+    try {
+      const clubId = await getClubId();
+      const ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) as string;
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://fwinnniiugjfmpkgybyu.supabase.co";
+
+      // Delete via service role edge function would be ideal, but for now delete profile + role (auth user stays but is orphaned/inactive)
+      await (supabase as any).from("user_roles").delete().eq("user_id", userId);
+      await supabase.from("profiles").delete().eq("user_id", userId);
+      setStaff(prev => prev.filter(s => s.user_id !== userId));
+      setConfirmDelete(null);
+      toast.success(`${member?.full_name ?? "Staff"} deleted`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to delete");
+    }
   };
 
   return (
@@ -934,6 +953,24 @@ function StaffPanel() {
                     ? <ToggleRight className="w-5 h-5 text-primary" />
                     : <ToggleLeft className="w-5 h-5" />}
                 </button>
+                {confirmDelete === s.user_id ? (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => deleteStaff(s.user_id)}
+                      className="px-2 py-1 rounded-lg bg-destructive text-white text-xs font-bold hover:opacity-90 transition-all">
+                      Confirm
+                    </button>
+                    <button onClick={() => setConfirmDelete(null)}
+                      className="px-2 py-1 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-all">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDelete(s.user_id)}
+                    title="Delete staff"
+                    className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   useActiveRoomSessions, useActiveDancers, useClubSettings, useRoomSessions,
-  useExtendRoomSession, useDanceTiers, today,
+  useExtendRoomSession, useDanceTiers, useClubRooms, today,
 } from "@/hooks/useDashboardData";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,9 +16,7 @@ import { toast } from "sonner";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3aW5ubmlpdWdqZm1wa2d5Ynl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTg0NDYsImV4cCI6MjA4OTI5NDQ0Nn0.wwr4xUM5fBGTVr2WGYtLVA_h48MhIRLiheIDQZh9ru8";
 
 // TODO: make configurable by Super Admin
-const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["VIP Room 1", "VIP Room 2"] },
-];
+// Room layout is now fetched from club_rooms table via useClubRooms()
 
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
 function formatTimer(ms: number) {
@@ -102,7 +100,18 @@ export function RoomsPanel() {
   const { data: settings }       = useClubSettings();
   const { data: todaySessions = [] } = useRoomSessions(today(), today());
   const { data: danceTiers = [] } = useDanceTiers();
+  const { data: clubRooms = [] } = useClubRooms();
   const qc = useQueryClient();
+
+  // Build ROOM_LAYOUT from DB
+  const ROOM_LAYOUT = (() => {
+    const byFloor: Record<string, string[]> = {};
+    clubRooms.forEach(r => {
+      if (!byFloor[r.floor]) byFloor[r.floor] = [];
+      byFloor[r.floor].push(r.name);
+    });
+    return Object.entries(byFloor).map(([floor, rooms]) => ({ floor, rooms }));
+  })();
 
   // Split active query into queue vs truly active
   const queued  = allActive.filter(s => !s.entry_time || s.room_name === "Queue");

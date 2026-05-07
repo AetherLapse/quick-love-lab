@@ -24,14 +24,12 @@ import {
   useRoomSessions,
   useDancerBalancesToday,
   useMarkDancerPayment,
+  useClubRooms,
   today,
 } from "@/hooks/useDashboardData";
 import { supabase } from "@/integrations/supabase/client";
 import { getClubId } from "@/lib/clubId";
 
-const ROOM_LAYOUT = [
-  { floor: "Floor 1", rooms: ["VIP Room 1", "VIP Room 2"] },
-];
 function buildRoomName(floor: string, room: string) { return `${floor} - ${room}`; }
 
 // ─── Report Modals ────────────────────────────────────────────────────────────
@@ -429,6 +427,13 @@ function ActiveRoomSessionsStrip({
   const beepedWarning  = useRef<Set<string>>(new Set());
   const beepedOvertime = useRef<Set<string>>(new Set());
   const qc = useQueryClient();
+  const { data: clubRooms = [] } = useClubRooms();
+
+  const ROOM_LAYOUT = (() => {
+    const byFloor: Record<string, string[]> = {};
+    clubRooms.forEach(r => { if (!byFloor[r.floor]) byFloor[r.floor] = []; byFloor[r.floor].push(r.name); });
+    return Object.entries(byFloor).map(([floor, rooms]) => ({ floor, rooms }));
+  })();
 
   useEffect(() => {
     const iv = setInterval(() => setNowMs(Date.now()), 1000);

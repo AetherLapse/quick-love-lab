@@ -336,6 +336,21 @@ export function useClubSettings() {
   });
 }
 
+export function useClubRooms() {
+  return useQuery({
+    queryKey: ["club_rooms"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("club_rooms")
+        .select("id, name, floor, is_active")
+        .eq("is_active", true)
+        .order("floor,name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string; floor: string; is_active: boolean }[];
+    },
+  });
+}
+
 // ─── Aggregated dashboard stats ───────────────────────────────────────────────
 
 export function useDashboardStats(period: Period, custom?: CustomRange) {

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { adminClient } from "@/lib/supabase";
 import {
   X, Pencil, Pause, Play, Trash2, KeyRound, Globe, Building2,
-  Loader2, AlertTriangle, UserCog,
+  Loader2, AlertTriangle, UserCog, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ClubConfig } from "./ClubConfig";
 
 interface Club {
   id: string;
@@ -34,6 +35,7 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
   const [resetPassword, setResetPassword] = useState("");
   const [resetting, setResetting] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -199,6 +201,12 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
               </button>
             )}
 
+            <button onClick={() => setShowConfig(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-brand-500/30 hover:bg-brand-500/5 text-left transition-all">
+              <Wrench className="w-4 h-4 text-brand-500" />
+              <span className="text-sm text-white font-medium">Developer Config</span>
+            </button>
+
             {!showReset && (
               <button onClick={() => { setShowReset(true); setResetEmail(club.owner_email ?? ""); }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-gray-700 hover:bg-gray-800/50 text-left transition-all">
@@ -238,6 +246,10 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
           </div>
         </div>
       </div>
+
+      {showConfig && (
+        <ClubConfig clubId={club.id} clubName={club.name} onClose={() => setShowConfig(false)} />
+      )}
     </div>
   );
 }

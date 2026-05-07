@@ -91,9 +91,19 @@ function PinPad({ value, onChange }: { value: string; onChange: (v: string) => v
 
 export default function Login() {
   const navigate = useNavigate();
-  const { clubName, clubLogo } = useClub();
+  const { clubId: domainClubId, clubName, clubLogo, resolved } = useClub();
   const logo = clubLogo || defaultLogo;
   const venueName = clubName || "2NYT ENTERTAINMENT";
+
+  const verifyClubMatch = (user: { app_metadata?: Record<string, unknown> }): boolean => {
+    if (resolved !== "domain" || !domainClubId) return true;
+    const userClubId = user.app_metadata?.club_id as string | undefined;
+    if (userClubId && userClubId !== domainClubId) {
+      supabase.auth.signOut();
+      return false;
+    }
+    return true;
+  };
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -134,6 +144,12 @@ export default function Login() {
     }
 
     if (authData?.user) {
+      if (!verifyClubMatch(authData.user)) {
+        setLoading(false);
+        setError("This account does not belong to this venue");
+        triggerShake();
+        return;
+      }
       const { data } = await supabase
         .from("user_roles").select("role")
         .eq("user_id", authData.user.id).maybeSingle();
@@ -183,6 +199,13 @@ export default function Login() {
 
       if (verifyErr) {
         setPinError("Session error — try again");
+        setPin("");
+        triggerShake();
+        return;
+      }
+
+      if (otpData?.user && !verifyClubMatch(otpData.user)) {
+        setPinError("This account does not belong to this venue");
         setPin("");
         triggerShake();
         return;

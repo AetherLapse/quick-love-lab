@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { adminClient } from "@/lib/supabase";
 import {
   X, Pencil, Pause, Play, Trash2, KeyRound, Globe, Building2,
-  Loader2, AlertTriangle, UserCog, Wrench,
+  Loader2, AlertTriangle, UserCog, Wrench, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ClubConfig } from "./ClubConfig";
@@ -29,6 +29,9 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(club.name);
   const [domain, setDomain] = useState(club.domain ?? "");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -39,9 +42,21 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
 
   const handleSave = async () => {
     setSaving(true);
+    let logoUrl = club.logo_url;
+
+    if (logoFile) {
+      const ext = logoFile.name.split(".").pop() ?? "png";
+      const path = `${club.slug}/logo.${ext}`;
+      const { error: uploadErr } = await adminClient.storage.from("club-logos").upload(path, logoFile, { upsert: true });
+      if (uploadErr) { setSaving(false); toast.error("Logo upload failed: " + uploadErr.message); return; }
+      const { data: urlData } = adminClient.storage.from("club-logos").getPublicUrl(path);
+      logoUrl = urlData.publicUrl;
+    }
+
     const { error } = await adminClient.from("clubs").update({
       name: name.trim(),
       domain: domain.trim() || null,
+      logo_url: logoUrl,
     }).eq("id", club.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -154,8 +169,33 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
                 <input value={domain} onChange={e => setDomain(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-brand-500" />
               </div>
+              {/* Logo */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-500">Club Logo</label>
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); }
+                  }} />
+                <div className="flex items-center gap-3">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Logo" className="w-12 h-12 rounded-lg object-cover border border-gray-600" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-gray-600" />
+                    </div>
+                  )}
+                  <button onClick={() => fileRef.current?.click()}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-700 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-all">
+                    <Upload className="w-3 h-3" /> {logoPreview ? "Change" : "Upload"}
+                  </button>
+                  {logoFile && (
+                    <span className="text-[10px] text-gray-500 truncate max-w-[100px]">{logoFile.name}</span>
+                  )}
+                </div>
+              </div>
               <div className="flex gap-2">
-                <button onClick={() => setEditing(false)}
+                <button onClick={() => { setEditing(false); setLogoFile(null); setLogoPreview(club.logo_url); }}
                   className="flex-1 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white transition-all">Cancel</button>
                 <button onClick={handleSave} disabled={saving}
                   className="flex-1 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center justify-center gap-1.5 transition-all">

@@ -199,9 +199,17 @@ function Sidebar({
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <img src={logo} alt="Logo" className="w-9 h-9 rounded-full object-cover shrink-0" />
+        {logo ? (
+          <img src={logo} alt="Logo" className="w-9 h-9 rounded-full object-cover shrink-0" />
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-white/10 animate-pulse shrink-0" />
+        )}
         <div className="min-w-0">
-          <p className="text-white text-sm font-semibold leading-none">{venueName}</p>
+          {venueName ? (
+            <p className="text-white text-sm font-semibold leading-none">{venueName}</p>
+          ) : (
+            <div className="h-4 w-28 rounded bg-white/10 animate-pulse" />
+          )}
           <p className="text-white/40 text-xs mt-0.5">Venue Intelligence</p>
         </div>
       </div>
@@ -279,9 +287,9 @@ function Sidebar({
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { role, user, signOut } = useAuth();
-  const { clubName, clubLogo, resolved } = useClub();
-  const logo = clubLogo || defaultLogo;
-  const venueName = clubName || "2NYT Entertainment";
+  const { clubName, clubLogo, resolved, loading: clubLoading } = useClub();
+  const logo = clubLoading ? "" : (clubLogo || defaultLogo);
+  const venueName = clubLoading ? "" : (clubName || "2NYT Entertainment");
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -343,7 +351,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           >
             <Menu className="w-6 h-6" />
           </button>
-          <span className="text-white text-base font-semibold">{venueName}</span>
+          {venueName ? (
+            <span className="text-white text-base font-semibold">{venueName}</span>
+          ) : (
+            <div className="h-5 w-32 rounded bg-white/10 animate-pulse" />
+          )}
           {resolved === "fallback" && <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60" title="Fallback branding — domain not resolved" />}
         </header>
 

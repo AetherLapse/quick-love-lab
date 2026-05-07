@@ -11,7 +11,7 @@ const TAGLINES = [
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { clubName, clubLogo } = useClub();
+  const { clubName, clubLogo, loading } = useClub();
   const [taglineIndex, setTaglineIndex] = useState(0);
 
   useEffect(() => {
@@ -36,14 +36,22 @@ export default function Landing() {
 
         {/* ── LEFT: Logo + Branding ── */}
         <div className="flex flex-col items-center text-center">
-          <img
-            src={logo}
-            alt={name}
-            className="h-36 md:h-44 w-auto drop-shadow-md mb-5 animate-float"
-          />
-          <h1 className="text-2xl md:text-3xl font-extrabold leading-tight tracking-tight text-foreground">
-            {name}
-          </h1>
+          {loading ? (
+            <div className="h-36 md:h-44 w-36 md:w-44 rounded-full bg-secondary/60 animate-pulse mb-5" />
+          ) : (
+            <img
+              src={logo}
+              alt={name}
+              className="h-36 md:h-44 w-auto drop-shadow-md mb-5 animate-float"
+            />
+          )}
+          {loading ? (
+            <div className="h-8 w-48 rounded-lg bg-secondary/60 animate-pulse" />
+          ) : (
+            <h1 className="text-2xl md:text-3xl font-extrabold leading-tight tracking-tight text-foreground">
+              {name}
+            </h1>
+          )}
           <div className="h-6 overflow-hidden mt-2">
             <p
               key={taglineIndex}

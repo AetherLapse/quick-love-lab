@@ -91,7 +91,7 @@ function PinPad({ value, onChange }: { value: string; onChange: (v: string) => v
 
 export default function Login() {
   const navigate = useNavigate();
-  const { clubId: domainClubId, clubName, clubLogo, resolved } = useClub();
+  const { clubId: domainClubId, clubName, clubLogo, resolved, loading: clubLoading } = useClub();
   const logo = clubLogo || defaultLogo;
   const venueName = clubName || "2NYT ENTERTAINMENT";
 
@@ -248,10 +248,18 @@ export default function Login() {
         className="hidden md:flex flex-col items-center justify-center w-80 px-10 shrink-0"
         style={{ background: "hsl(240 18% 10%)" }}
       >
-        <img src={logo} alt={venueName} className="h-36 w-auto drop-shadow-lg mb-5 animate-float" />
-        <h2 className="text-white text-lg font-extrabold tracking-tight text-center mb-2">
-          {venueName}
-        </h2>
+        {clubLoading ? (
+          <div className="h-36 w-36 rounded-full bg-white/10 animate-pulse mb-5" />
+        ) : (
+          <img src={logo} alt={venueName} className="h-36 w-auto drop-shadow-lg mb-5 animate-float" />
+        )}
+        {clubLoading ? (
+          <div className="h-6 w-40 rounded-lg bg-white/10 animate-pulse mb-2" />
+        ) : (
+          <h2 className="text-white text-lg font-extrabold tracking-tight text-center mb-2">
+            {venueName}
+          </h2>
+        )}
         <p key={taglineIndex} className="text-primary text-sm font-medium tracking-wide text-center animate-tagline-in">
           {TAGLINES[taglineIndex]}
         </p>
@@ -267,8 +275,16 @@ export default function Login() {
         <div className={`w-full max-w-sm ${shake ? "animate-shake" : ""}`}>
           {/* Mobile logo */}
           <div className="md:hidden flex flex-col items-center mb-10">
-            <img src={logo} alt={venueName} className="h-20 w-auto animate-float mb-3" />
-            <p className="text-sm font-bold text-foreground">{venueName}</p>
+            {clubLoading ? (
+              <div className="h-20 w-20 rounded-full bg-secondary/60 animate-pulse mb-3" />
+            ) : (
+              <img src={logo} alt={venueName} className="h-20 w-auto animate-float mb-3" />
+            )}
+            {clubLoading ? (
+              <div className="h-5 w-32 rounded-lg bg-secondary/60 animate-pulse" />
+            ) : (
+              <p className="text-sm font-bold text-foreground">{venueName}</p>
+            )}
           </div>
 
           {/* ── PIN mode ── */}

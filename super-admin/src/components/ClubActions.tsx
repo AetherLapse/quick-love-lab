@@ -50,7 +50,7 @@ export function ClubActions({ club, onClose, onUpdated }: Props) {
       const { error: uploadErr } = await adminClient.storage.from("club-logos").upload(path, logoFile, { upsert: true });
       if (uploadErr) { setSaving(false); toast.error("Logo upload failed: " + uploadErr.message); return; }
       const { data: urlData } = adminClient.storage.from("club-logos").getPublicUrl(path);
-      logoUrl = urlData.publicUrl;
+      logoUrl = `${urlData.publicUrl}?v=${Date.now()}`;
     }
 
     const { error } = await adminClient.from("clubs").update({

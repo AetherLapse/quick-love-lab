@@ -374,6 +374,47 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
 
 // ── Brand Color ──────────────────────────────────────────────────────────────
 
+function hexToHsl(hex: string): string {
+  let r = parseInt(hex.slice(1, 3), 16) / 255;
+  let g = parseInt(hex.slice(3, 5), 16) / 255;
+  let b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+}
+
+function hexFromHsl(hsl: string): string {
+  const parts = hsl.split(/\s+/);
+  const h = parseInt(parts[0]) / 360;
+  const s = parseInt(parts[1]) / 100;
+  const l = parseInt(parts[2]) / 100;
+  let r: number, g: number, b: number;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  const toHex = (n: number) => Math.round(n * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
 const COLOR_PRESETS = [
   { label: "Pink",     hsl: "328 78% 47%" },
   { label: "Purple",   hsl: "270 70% 50%" },
@@ -440,33 +481,31 @@ function BrandColorPanel({ clubId }: { clubId: string }) {
         ))}
       </div>
 
-      {/* Custom HSL */}
+      {/* Custom color picker */}
       <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-3 space-y-2">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Custom HSL</p>
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg shrink-0 border border-gray-600" style={{ background: `hsl(${customHsl})` }} />
-          <div className="flex-1 grid grid-cols-3 gap-2">
-            <div className="space-y-0.5">
-              <label className="text-[9px] text-gray-500">H (0-360)</label>
-              <input type="number" min={0} max={360} value={customH} onChange={e => setCustomH(e.target.value)}
-                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
-            </div>
-            <div className="space-y-0.5">
-              <label className="text-[9px] text-gray-500">S (%)</label>
-              <input type="number" min={0} max={100} value={customS} onChange={e => setCustomS(e.target.value)}
-                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
-            </div>
-            <div className="space-y-0.5">
-              <label className="text-[9px] text-gray-500">L (%)</label>
-              <input type="number" min={0} max={100} value={customL} onChange={e => setCustomL(e.target.value)}
-                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
-            </div>
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Custom Color</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={hexFromHsl(color)}
+            onChange={e => {
+              const hsl = hexToHsl(e.target.value);
+              setColor(hsl);
+              setCustomH(hsl.split(/\s+/)[0]);
+              setCustomS(parseInt(hsl.split(/\s+/)[1]).toString());
+              setCustomL(parseInt(hsl.split(/\s+/)[2]).toString());
+            }}
+            className="w-12 h-12 rounded-lg border border-gray-600 cursor-pointer bg-transparent"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="h-8 rounded-lg" style={{ background: `hsl(${customHsl})` }} />
+            <p className="text-[10px] text-gray-500 mt-1 font-mono">{customHsl}</p>
           </div>
+          <button onClick={() => handleSave(customHsl)} disabled={saving}
+            className="px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center gap-1 transition-all shrink-0">
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Apply
+          </button>
         </div>
-        <button onClick={() => handleSave(customHsl)} disabled={saving}
-          className="w-full py-2 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center justify-center gap-1 transition-all">
-          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Apply Custom Color
-        </button>
       </div>
 
       <p className="text-[10px] text-gray-600">Current: <code className="text-gray-400">{color}</code></p>

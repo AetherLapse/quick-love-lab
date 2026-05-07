@@ -254,7 +254,7 @@ interface EntryTier {
   id: string;
   name: string;
   price: number;
-  guest_count: number;
+  admits_count: number;
   is_active: boolean;
 }
 
@@ -281,7 +281,7 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
     const payload = {
       name: form.name.trim(),
       price: parseFloat(form.price) || 0,
-      guest_count: parseInt(form.guest_count) || 1,
+      admits_count: parseInt(form.guest_count) || 1,
       club_id: clubId,
       is_active: true,
     };
@@ -308,7 +308,7 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
   const startEdit = (t: EntryTier) => {
     setEditId(t.id);
     setAdding(true);
-    setForm({ name: t.name, price: String(t.price), guest_count: String(t.guest_count ?? 1) });
+    setForm({ name: t.name, price: String(t.price), guest_count: String(t.admits_count ?? 1) });
   };
 
   return (
@@ -335,7 +335,7 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
             <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-700 bg-gray-800/50">
               <span className="text-sm font-semibold text-white flex-1">{t.name}</span>
               <span className="text-sm text-green-400 font-mono">{t.price > 0 ? `$${t.price}` : "Free"}</span>
-              {(t.guest_count ?? 1) > 1 && <span className="text-xs text-gray-500">/{t.guest_count}</span>}
+              {(t.admits_count ?? 1) > 1 && <span className="text-xs text-gray-500">/{t.admits_count}</span>}
               <button onClick={() => startEdit(t)} className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
                 <Pencil className="w-3 h-3" />
               </button>

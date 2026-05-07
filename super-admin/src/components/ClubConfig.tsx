@@ -248,6 +248,130 @@ function VIPRoomsPanel({ clubId }: { clubId: string }) {
   );
 }
 
+// ── Entry Tiers (Door Cover Packages) ────────────────────────────────────────
+
+interface EntryTier {
+  id: string;
+  name: string;
+  price: number;
+  guest_count: number;
+  is_active: boolean;
+}
+
+function EntryTiersPanel({ clubId }: { clubId: string }) {
+  const [tiers, setTiers] = useState<EntryTier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", price: "", guest_count: "1" });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await adminClient.from("entry_tiers").select("*").eq("club_id", clubId).order("price");
+    setTiers((data ?? []) as EntryTier[]);
+    setLoading(false);
+  }, [clubId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error("Name required"); return; }
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      price: parseFloat(form.price) || 0,
+      guest_count: parseInt(form.guest_count) || 1,
+      club_id: clubId,
+      is_active: true,
+    };
+    if (editId) {
+      await adminClient.from("entry_tiers").update(payload).eq("id", editId);
+      toast.success("Entry tier updated");
+    } else {
+      await adminClient.from("entry_tiers").insert(payload);
+      toast.success("Entry tier added");
+    }
+    setSaving(false);
+    setEditId(null);
+    setAdding(false);
+    setForm({ name: "", price: "", guest_count: "1" });
+    load();
+  };
+
+  const handleDelete = async (id: string) => {
+    await adminClient.from("entry_tiers").delete().eq("id", id);
+    toast.success("Entry tier deleted");
+    load();
+  };
+
+  const startEdit = (t: EntryTier) => {
+    setEditId(t.id);
+    setAdding(true);
+    setForm({ name: t.name, price: String(t.price), guest_count: String(t.guest_count ?? 1) });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-green-400" /> Door Entry Tiers
+        </h3>
+        {!adding && (
+          <button onClick={() => { setAdding(true); setEditId(null); setForm({ name: "", price: "", guest_count: "1" }); }}
+            className="flex items-center gap-1 text-xs text-brand-500 hover:text-brand-400 transition-colors">
+            <Plus className="w-3 h-3" /> Add
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-gray-500 text-sm py-3"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+      ) : tiers.length === 0 ? (
+        <p className="text-sm text-gray-500 italic">No entry tiers configured</p>
+      ) : (
+        <div className="space-y-1.5">
+          {tiers.map(t => (
+            <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-700 bg-gray-800/50">
+              <span className="text-sm font-semibold text-white flex-1">{t.name}</span>
+              <span className="text-sm text-green-400 font-mono">{t.price > 0 ? `$${t.price}` : "Free"}</span>
+              {(t.guest_count ?? 1) > 1 && <span className="text-xs text-gray-500">/{t.guest_count}</span>}
+              <button onClick={() => startEdit(t)} className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button onClick={() => handleDelete(t.id)} className="p-1 rounded hover:bg-red-500/10 text-gray-400 hover:text-red-400 transition-colors">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding && (
+        <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-3 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Tier name (e.g. Full Cover)"
+              className="col-span-3 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-brand-500" />
+            <input value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} placeholder="Price $" type="number"
+              className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-brand-500" />
+            <input value={form.guest_count} onChange={e => setForm({ ...form, guest_count: e.target.value })} placeholder="Guests" type="number"
+              className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-brand-500" />
+          </div>
+          <p className="text-[10px] text-gray-500">Guest count: how many guests per entry (e.g. 2 for "2-for-1")</p>
+          <div className="flex gap-2">
+            <button onClick={() => { setAdding(false); setEditId(null); }}
+              className="flex-1 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white transition-all">Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center justify-center gap-1 transition-all">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} {editId ? "Update" : "Add"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Club Settings ────────────────────────────────────────────────────────────
 
 function ClubSettingsPanel({ clubId }: { clubId: string }) {
@@ -328,6 +452,8 @@ export function ClubConfig({ clubId, clubName, onClose }: Props) {
 
         <div className="px-6 py-5 space-y-6">
           <DanceTiersPanel clubId={clubId} />
+          <div className="border-t border-gray-800" />
+          <EntryTiersPanel clubId={clubId} />
           <div className="border-t border-gray-800" />
           <VIPRoomsPanel clubId={clubId} />
           <div className="border-t border-gray-800" />

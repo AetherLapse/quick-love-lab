@@ -372,6 +372,108 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
   );
 }
 
+// ── Brand Color ──────────────────────────────────────────────────────────────
+
+const COLOR_PRESETS = [
+  { label: "Pink",     hsl: "328 78% 47%" },
+  { label: "Purple",   hsl: "270 70% 50%" },
+  { label: "Blue",     hsl: "220 80% 50%" },
+  { label: "Cyan",     hsl: "190 80% 45%" },
+  { label: "Green",    hsl: "150 70% 40%" },
+  { label: "Amber",    hsl: "38 90% 50%" },
+  { label: "Red",      hsl: "0 75% 50%" },
+  { label: "Indigo",   hsl: "240 60% 55%" },
+];
+
+function BrandColorPanel({ clubId }: { clubId: string }) {
+  const [color, setColor] = useState("328 78% 47%");
+  const [customH, setCustomH] = useState("328");
+  const [customS, setCustomS] = useState("78");
+  const [customL, setCustomL] = useState("47");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    adminClient.from("clubs").select("brand_color").eq("id", clubId).single()
+      .then(({ data }) => {
+        const c = (data as any)?.brand_color ?? "328 78% 47%";
+        setColor(c);
+        const parts = c.split(/\s+/);
+        if (parts.length >= 3) { setCustomH(parts[0]); setCustomS(parseInt(parts[1]).toString()); setCustomL(parseInt(parts[2]).toString()); }
+        setLoading(false);
+      });
+  }, [clubId]);
+
+  const handleSave = async (hsl: string) => {
+    setSaving(true);
+    await adminClient.from("clubs").update({ brand_color: hsl }).eq("id", clubId);
+    setColor(hsl);
+    const parts = hsl.split(/\s+/);
+    if (parts.length >= 3) { setCustomH(parts[0]); setCustomS(parseInt(parts[1]).toString()); setCustomL(parseInt(parts[2]).toString()); }
+    setSaving(false);
+    toast.success("Brand color updated");
+  };
+
+  const customHsl = `${customH} ${customS}% ${customL}%`;
+
+  if (loading) return <div className="flex items-center gap-2 text-gray-500 text-sm py-3"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+        <span className="w-4 h-4 rounded-full" style={{ background: `hsl(${color})` }} /> Brand Color
+      </h3>
+
+      {/* Presets */}
+      <div className="flex flex-wrap gap-2">
+        {COLOR_PRESETS.map(p => (
+          <button
+            key={p.label}
+            onClick={() => handleSave(p.hsl)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+              color === p.hsl ? "border-white bg-white/10 text-white" : "border-gray-700 text-gray-400 hover:border-gray-500"
+            }`}
+          >
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: `hsl(${p.hsl})` }} />
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom HSL */}
+      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-3 space-y-2">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Custom HSL</p>
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-lg shrink-0 border border-gray-600" style={{ background: `hsl(${customHsl})` }} />
+          <div className="flex-1 grid grid-cols-3 gap-2">
+            <div className="space-y-0.5">
+              <label className="text-[9px] text-gray-500">H (0-360)</label>
+              <input type="number" min={0} max={360} value={customH} onChange={e => setCustomH(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
+            </div>
+            <div className="space-y-0.5">
+              <label className="text-[9px] text-gray-500">S (%)</label>
+              <input type="number" min={0} max={100} value={customS} onChange={e => setCustomS(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
+            </div>
+            <div className="space-y-0.5">
+              <label className="text-[9px] text-gray-500">L (%)</label>
+              <input type="number" min={0} max={100} value={customL} onChange={e => setCustomL(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+        </div>
+        <button onClick={() => handleSave(customHsl)} disabled={saving}
+          className="w-full py-2 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center justify-center gap-1 transition-all">
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Apply Custom Color
+        </button>
+      </div>
+
+      <p className="text-[10px] text-gray-600">Current: <code className="text-gray-400">{color}</code></p>
+    </div>
+  );
+}
+
 // ── Club Settings ────────────────────────────────────────────────────────────
 
 function ClubSettingsPanel({ clubId }: { clubId: string }) {
@@ -451,6 +553,8 @@ export function ClubConfig({ clubId, clubName, onClose }: Props) {
         </div>
 
         <div className="px-6 py-5 space-y-6">
+          <BrandColorPanel clubId={clubId} />
+          <div className="border-t border-gray-800" />
           <DanceTiersPanel clubId={clubId} />
           <div className="border-t border-gray-800" />
           <EntryTiersPanel clubId={clubId} />

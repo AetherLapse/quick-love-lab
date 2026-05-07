@@ -1,0 +1,1 @@
+ALTER TABLE public.clubs ADD COLUMN IF NOT EXISTS brand_color TEXT DEFAULT '328 78% 47%';

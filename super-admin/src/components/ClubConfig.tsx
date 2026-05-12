@@ -822,7 +822,7 @@ export function ClubConfig({ clubId, clubName, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex w-full h-full max-w-5xl mx-auto my-4 md:my-8 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="flex w-full max-w-5xl mx-auto m-4 md:m-8 max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-4rem)] rounded-2xl overflow-hidden border border-gray-800 shadow-2xl" onClick={e => e.stopPropagation()}>
 
         {/* Left sidebar — tabs */}
         <div className="w-56 bg-gray-950 border-r border-gray-800 flex flex-col shrink-0">

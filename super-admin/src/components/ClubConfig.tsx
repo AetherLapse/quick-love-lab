@@ -574,33 +574,67 @@ function ClubSettingsPanel({ clubId }: { clubId: string }) {
   );
 }
 
-// ── Main Config Panel ────────────────────────────────────────────────────────
+// ── Main Config Panel (full-page, tabbed sidebar) ────────────────────────────
+
+const CONFIG_TABS = [
+  { id: "brand",    label: "Brand Color",     icon: "🎨" },
+  { id: "packages", label: "Dance Packages",  icon: "💰" },
+  { id: "entry",    label: "Door Entry Tiers", icon: "🚪" },
+  { id: "rooms",    label: "VIP Rooms",       icon: "🛏️" },
+  { id: "settings", label: "Club Settings",   icon: "⚙️" },
+] as const;
+
+type ConfigTab = typeof CONFIG_TABS[number]["id"];
 
 export function ClubConfig({ clubId, clubName, onClose }: Props) {
+  const [activeTab, setActiveTab] = useState<ConfigTab>("brand");
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
-          <div>
+    <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex w-full h-full max-w-5xl mx-auto my-4 md:my-8 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl" onClick={e => e.stopPropagation()}>
+
+        {/* Left sidebar — tabs */}
+        <div className="w-56 bg-gray-950 border-r border-gray-800 flex flex-col shrink-0">
+          {/* Header */}
+          <div className="px-5 py-5 border-b border-gray-800">
             <h2 className="text-base font-bold text-white">Developer Config</h2>
-            <p className="text-xs text-gray-500">{clubName}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{clubName}</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-800 text-gray-400">
-            <X className="w-5 h-5" />
-          </button>
+
+          {/* Tab list */}
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            {CONFIG_TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
+                  activeTab === tab.id
+                    ? "bg-brand-600/20 text-brand-400 border border-brand-600/30"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800/50 border border-transparent"
+                }`}
+              >
+                <span className="text-base">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Close button */}
+          <div className="px-3 py-4 border-t border-gray-800">
+            <button onClick={onClose}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-700 text-sm text-gray-400 hover:text-white hover:border-gray-600 transition-all">
+              <X className="w-4 h-4" /> Close
+            </button>
+          </div>
         </div>
 
-        <div className="px-6 py-5 space-y-6">
-          <BrandColorPanel clubId={clubId} />
-          <div className="border-t border-gray-800" />
-          <DanceTiersPanel clubId={clubId} />
-          <div className="border-t border-gray-800" />
-          <EntryTiersPanel clubId={clubId} />
-          <div className="border-t border-gray-800" />
-          <VIPRoomsPanel clubId={clubId} />
-          <div className="border-t border-gray-800" />
-          <ClubSettingsPanel clubId={clubId} />
+        {/* Right content */}
+        <div className="flex-1 bg-gray-900 overflow-y-auto p-6 md:p-8">
+          {activeTab === "brand"    && <BrandColorPanel clubId={clubId} />}
+          {activeTab === "packages" && <DanceTiersPanel clubId={clubId} />}
+          {activeTab === "entry"    && <EntryTiersPanel clubId={clubId} />}
+          {activeTab === "rooms"    && <VIPRoomsPanel clubId={clubId} />}
+          {activeTab === "settings" && <ClubSettingsPanel clubId={clubId} />}
         </div>
       </div>
     </div>

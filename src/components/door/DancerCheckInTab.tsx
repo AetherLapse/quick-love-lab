@@ -1096,7 +1096,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
               onClick={() => setStep("idle")}
               className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
             >
-              ← Try Face Scan Again
+              ← Back to Clock-In
             </button>
           </div>
         )}

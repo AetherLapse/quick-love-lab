@@ -370,7 +370,7 @@ function CheckoutSummary({
           <div className="flex items-start gap-2 px-3 py-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold">Early Leave — Before Midnight</p>
+              <p className="font-semibold">Early Leave — Before Closing</p>
               <p className="text-xs mt-0.5">Fine: <span className="font-bold">${EARLY_LEAVE_FINE_AMOUNT}</span></p>
             </div>
           </div>
@@ -940,41 +940,15 @@ export function DancerCheckOutFlow({ onClose }: CheckOutFlowProps) {
               </p>
               <div className="grid grid-cols-1 gap-3 pt-1">
                 <button
-                  onClick={() => setStep("face_scan")}
-                  className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all group"
+                  onClick={() => setStep("staff_pin")}
+                  className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 border-primary bg-primary/5 transition-all group"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                    <ScanFace className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-sm text-foreground">Face Scan</p>
-                    <p className="text-xs text-muted-foreground">Scan dancer's face to verify presence</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setStep("staff_pin")}
-                  className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all group"
-                >
-                  <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center group-hover:bg-secondary/80 transition-colors">
-                    <Hash className="w-6 h-6 text-muted-foreground group-hover:text-foreground" />
+                    <Hash className="w-6 h-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-semibold text-sm text-foreground">PIN Entry</p>
                     <p className="text-xs text-muted-foreground">Bouncer PIN first, then dancer PIN</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setStep("dl_scan")}
-                  className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all group"
-                >
-                  <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center group-hover:bg-secondary/80 transition-colors">
-                    <CreditCard className="w-6 h-6 text-muted-foreground group-hover:text-foreground" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-sm text-foreground">DL Scan</p>
-                    <p className="text-xs text-muted-foreground">Scan back of driver's license</p>
                   </div>
                 </button>
               </div>

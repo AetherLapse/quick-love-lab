@@ -1272,8 +1272,8 @@ export default function DoorCheckIn() {
                 <LogOut className="w-6 h-6 text-white" />
               </div>
               <div className="text-left">
-                <p className="font-bold text-lg text-orange-800">Dancer Check-Out</p>
-                <p className="text-sm text-orange-600">Requires dancer PIN or face scan</p>
+                <p className="font-bold text-lg text-orange-800">Dancer Clock-Out</p>
+                <p className="text-sm text-orange-600">Requires dancer PIN</p>
               </div>
             </div>
             <ChevronRight className="w-6 h-6 text-orange-400 group-hover:text-orange-600 transition-colors" />

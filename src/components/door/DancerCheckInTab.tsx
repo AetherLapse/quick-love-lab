@@ -155,6 +155,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   const [step, setStep]         = useState<EnrollStep>("staff_pin");
   const [dlData, setDlData]     = useState<DLScanResult | null>(null);
   const [stageName, setStageName] = useState("");
+  const [fullNameInput, setFullNameInput] = useState("");
   const [phone, setPhone]       = useState("");
   const [dancerPin, setDancerPin] = useState("");
   const [pinErr, setPinErr]     = useState<string | null>(null);
@@ -217,7 +218,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       setStaffPin("");
       return;
     }
-    setStep("dl_scan");
+    setStep("details");
   };
 
   // ── Step 3: Create dancer record + proceed to face ─────────────────────────
@@ -226,16 +227,9 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
     if (!phone.trim())     { setPinErr("Phone number is required"); return; }
     if (dancerPin.length < 4) { setPinErr("PIN must be at least 4 digits"); return; }
 
-    // Hard under-18 enforcement — defensive double-check
-    const age = calcAge(dlData?.dobISO ?? null);
-    if (age !== null && age < 18) {
-      setPinErr("Registration blocked — dancer is under 18.");
-      return;
-    }
-
     // SSN validation
     const ssnDigits = ssn.replace(/\D/g, "");
-    if (ssnDigits.length > 0 && ssnDigits.length !== 9) {
+    if (ssnDigits.length !== 9) {
       setSsnErr("SSN must be 9 digits (XXX-XX-XXXX)");
       return;
     }
@@ -250,7 +244,8 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       stage_name:   stageName.trim(),
       enroll_id:    enrollId,
       pin_code:     dancerPin,
-      full_name:    dlData?.fullName ?? stageName.trim(),
+      full_name:    dlData?.fullName ?? fullNameInput.trim(),
+      phone:        phone.trim(),
       is_active:    true,
       is_enrolled:  false,
     };
@@ -261,7 +256,6 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       insertData.dob          = dlData.dobISO;
       insertData.dl_address   = dlData.address;
     }
-    if (phone.trim()) insertData.phone = phone.trim();
 
     // Encrypt SSN before storing — AES-256-GCM, never plain text
     if (ssnDigits.length === 9) {
@@ -282,7 +276,7 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
       return;
     }
     setNewDancerId(inserted.id);
-    setStep("face");
+    setStep("done");
   };
 
   // ── Step 4: Face capture + Rekognition index ───────────────────────────────
@@ -321,16 +315,14 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
   };
 
   // ── Step indicators ────────────────────────────────────────────────────────
-  const steps: EnrollStep[] = ["staff_pin", "dl_scan", "details", "face", "done"];
+  const steps: EnrollStep[] = ["staff_pin", "details", "done"];
   const stepIdx = steps.indexOf(step);
 
   return (
     <div className="glass-card p-6 space-y-5">
       <div className="flex items-center gap-3">
         <button onClick={step === "staff_pin" ? onBack : () => {
-          if (step === "dl_scan") setStep("staff_pin");
-          else if (step === "details") setStep("dl_scan");
-          else if (step === "face") { setStep("details"); setNewDancerId(null); }
+          if (step === "details") setStep("staff_pin");
         }} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -388,81 +380,55 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* ── DL Scan ───────────────────────────────────────────────────────── */}
-      {step === "dl_scan" && (
-        <DLEnrollScanner
-          currentDancerId=""
-          onConfirm={data => {
-            setDlData(data);
-            setStageName("");
-            setStep("details");
-          }}
-          onBack={() => setStep("staff_pin")}
-        />
-      )}
+      {/* DL Scan — hidden (manual enrollment only) */}
 
       {/* ── Details form ──────────────────────────────────────────────────── */}
-      {step === "details" && dlData && (() => {
-        const age = calcAge(dlData.dobISO);
-        // Hard block — should never reach here if DLEnrollScanner is working, but enforce defensively
-        if (age !== null && age < 18) {
-          return (
-            <div className="space-y-4">
-              <div className="bg-red-50 border-2 border-red-300 rounded-xl px-5 py-5 text-center space-y-2">
-                <AlertTriangle className="w-8 h-8 text-red-500 mx-auto" />
-                <p className="font-bold text-red-800 text-lg">Registration Blocked</p>
-                <p className="text-sm text-red-700">Dancer is {age} years old — minimum age is 18.</p>
-                <p className="text-xs text-red-600">This is a hard system restriction. No override available.</p>
-              </div>
-              <button onClick={() => setStep("dl_scan")} className="w-full py-2.5 rounded-xl border border-border text-sm font-medium transition-all">
-                ← Scan Different ID
-              </button>
-            </div>
-          );
-        }
+      {step === "details" && (() => {
         return (
         <div className="space-y-4">
-          {/* DL data summary + age badge */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="px-4 py-2 bg-secondary/40 border-b border-border flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID Verified</p>
-              {age !== null && (
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${age >= 21 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                  Age {age}{age >= 21 ? " ✓ 21+" : " · 18–20"}
-                </span>
-              )}
-            </div>
-            <div className="divide-y divide-border/60">
-              {[
-                { label: "DOB",  value: dlData.dobFormatted ?? "—" },
-                { label: "ID #", value: dlData.dlMasked },
-              ].filter(r => r.value).map(r => (
-                <div key={r.label} className="flex items-center gap-3 px-4 py-2.5">
-                  <span className="text-xs text-muted-foreground w-20 shrink-0">{r.label}</span>
-                  <span className="text-sm font-medium text-foreground">{r.value}</span>
-                </div>
-              ))}
-            </div>
+          {/* Full name */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Legal Name *</label>
+            <input
+              value={dlData?.fullName ?? fullNameInput}
+              onChange={e => setFullNameInput(e.target.value)}
+              placeholder="Legal full name"
+              autoFocus
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm focus:outline-none focus:border-primary"
+              readOnly={!!dlData}
+            />
+            <p className="text-xs text-muted-foreground">Stored securely — never shown publicly</p>
           </div>
 
-          {/* Stage name — prominent */}
+          {/* Stage name */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-primary uppercase tracking-wider">Choose a Stage Name *</label>
+            <label className="text-xs font-semibold text-primary uppercase tracking-wider">Stage Name *</label>
             <input
               value={stageName}
               onChange={e => setStageName(e.target.value)}
               placeholder="Enter stage name"
-              autoFocus
               className="w-full px-4 py-3 rounded-xl border-2 border-primary/40 bg-primary/5 text-base font-semibold focus:outline-none focus:border-primary"
             />
             <p className="text-xs text-muted-foreground">This is the name shown on stage, schedules, and displays</p>
           </div>
 
-          {/* SSN — encrypted before storage */}
+          {/* Phone */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone *</label>
+            <input
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+1 (555) 000-0000"
+              type="tel"
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {/* SSN — encrypted */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-              Social Security Number
-              <span className="normal-case font-normal text-muted-foreground">(AES-256 encrypted)</span>
+              Social Security Number *
+              <span className="normal-case font-normal text-muted-foreground">(encrypted)</span>
             </label>
             <div className="relative">
               <input
@@ -487,19 +453,6 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             {ssnErr && <p className="text-xs text-destructive">{ssnErr}</p>}
-            <p className="text-xs text-muted-foreground">Stored encrypted — never readable in plain text</p>
-          </div>
-
-          {/* Phone (required) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone *</label>
-            <input
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="+1 (555) 000-0000"
-              type="tel"
-              className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/30 text-sm focus:outline-none focus:border-primary"
-            />
           </div>
 
           {/* Dancer PIN */}
@@ -527,45 +480,16 @@ function EnrollDancerPanel({ onBack }: { onBack: () => void }) {
 
           {pinErr && <p className="text-xs text-destructive">{pinErr}</p>}
 
-          <button onClick={handleDetailsConfirm} disabled={!stageName.trim() || !phone.trim() || dancerPin.length < 4}
+          <button onClick={handleDetailsConfirm} disabled={!stageName.trim() || !phone.trim() || dancerPin.length < 4 || ssn.replace(/\D/g, "").length !== 9 || !(dlData?.fullName || fullNameInput.trim())}
             className="w-full py-3 rounded-xl bg-primary text-white font-bold disabled:opacity-40 flex items-center justify-center gap-2">
-            Continue to Face Scan
+            Complete Enrollment
           </button>
         </div>
         );
       })()}
 
       {/* ── Face scan ─────────────────────────────────────────────────────── */}
-      {step === "face" && (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground text-center">Center the dancer's face in the oval, then capture</p>
-          <div className="relative aspect-video bg-secondary/80 rounded-xl border border-border overflow-hidden">
-            <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-            <canvas ref={canvasRef} className="hidden" />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
-            </div>
-            <button onClick={flipEnrollCamera}
-              className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white transition-colors"
-              title="Switch camera">
-              <SwitchCamera className="w-4 h-4" />
-            </button>
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <button onClick={handleCapture}
-            className="w-full py-3 rounded-xl bg-primary text-white font-bold flex items-center justify-center gap-2 hover:opacity-90">
-            <Camera className="w-5 h-5" /> Capture & Finalise Enrollment
-          </button>
-        </div>
-      )}
-
-      {/* ── Processing ────────────────────────────────────────────────────── */}
-      {step === "processing" && (
-        <div className="flex flex-col items-center gap-4 py-10">
-          <Loader2 className="w-10 h-10 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Indexing face with AWS Rekognition…</p>
-        </div>
-      )}
+      {/* Face scan & processing — hidden (PIN-only enrollment) */}
 
       {/* ── Error ─────────────────────────────────────────────────────────── */}
       {step === "error" && (
@@ -735,7 +659,7 @@ function CheckOutPanel({ onBack }: { onBack: () => void }) {
               <div className="flex items-start gap-2 px-3 py-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold">Early Leave — Before Midnight</p>
+                  <p className="font-semibold">Early Leave — Before Closing</p>
                   <p className="text-xs mt-0.5">Fine: <span className="font-bold">${EARLY_LEAVE_FINE_AMOUNT}</span></p>
                 </div>
               </div>
@@ -1107,17 +1031,10 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
         {step === "idle" && (
           <>
             <button
-              onClick={() => handleFaceScan()}
+              onClick={() => { setStep("pin"); setPin(""); setPinError(false); }}
               className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl mb-4 flex items-center justify-center gap-3 text-lg transition-all hover:glow-gold"
             >
-              <Video className="w-5 h-5" />
-              Clock-in with Face Recognition
-            </button>
-            <button
-              onClick={() => { setStep("pin"); setPin(""); setPinError(false); }}
-              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-            >
-              Clock-in with PIN →
+              Clock-in with PIN
             </button>
             <button
               onClick={handleEnrollClick}
@@ -1129,7 +1046,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
                 </div>
                 <div className="text-left">
                   <p className="font-bold text-base text-primary">Enroll Dancer</p>
-                  <p className="text-xs text-primary/60">Scan ID + face to register with club</p>
+                  <p className="text-xs text-primary/60">Register Dancer with Club</p>
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-primary/40 group-hover:text-primary transition-colors" />
@@ -1137,77 +1054,7 @@ export default function DancerCheckInTab({ onNewDancer }: DancerCheckInTabProps)
           </>
         )}
 
-        {/* FACE CAMERA — live viewfinder */}
-        {step === "face-camera" && (
-          <div className="animate-fade-in space-y-3">
-            <div className="relative aspect-video bg-secondary/80 rounded-xl border border-border overflow-hidden">
-              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-              <canvas ref={canvasRef} className="hidden" />
-              {/* Face oval guide */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-40 h-52 rounded-full border-2 border-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
-              </div>
-              <button onClick={flipFaceCamera}
-                className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white/70 hover:text-white transition-colors"
-                title="Switch camera">
-                <SwitchCamera className="w-4 h-4" />
-              </button>
-              <p className="absolute bottom-3 inset-x-0 text-center text-xs text-white/80">
-                Center your face in the oval
-              </p>
-            </div>
-            <button
-              onClick={handleFaceCapture}
-              className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 transition-all hover:glow-gold"
-            >
-              <Camera className="w-5 h-5" /> Capture Face
-            </button>
-            <button
-              onClick={() => { stopFaceCamera(); setStep("pin"); setPin(""); }}
-              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-            >
-              Clock-in with PIN →
-            </button>
-          </div>
-        )}
-
-        {/* FACE PROCESSING */}
-        {step === "face-processing" && (
-          <div className="animate-fade-in flex flex-col items-center gap-4 py-6">
-            <div className="relative w-28 h-28">
-              <div className="absolute inset-0 rounded-full border-2 border-muted-foreground/30" />
-              <div className="absolute inset-0 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-scan-arc" />
-              <div className="absolute inset-4 flex items-center justify-center">
-                <User className="w-10 h-10 text-muted-foreground" />
-              </div>
-            </div>
-            <p className="text-muted-foreground text-sm">Matching face...</p>
-          </div>
-        )}
-
-        {/* FACE FAILED */}
-        {step === "face-failed" && (
-          <div className="animate-fade-in space-y-3">
-            <div className="bg-warning/10 border border-warning/30 rounded-xl p-4 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
-              <p className="text-warning font-semibold">
-                {faceError ?? "Face scan failed. Please enter your PIN."}
-              </p>
-            </div>
-            <button
-              onClick={() => { setStep("pin"); setPin(""); }}
-              className="w-full touch-target bg-primary text-primary-foreground font-semibold rounded-xl flex items-center justify-center gap-2 transition-all hover:glow-gold"
-            >
-              Enter PIN
-            </button>
-            <button
-              onClick={() => handleFaceScan()}
-              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-            >
-              ← Try Face Scan Again
-            </button>
-          </div>
-        )}
+        {/* Face scan check-in — hidden (PIN only) */}
 
         {/* PIN PAD */}
         {step === "pin" && (

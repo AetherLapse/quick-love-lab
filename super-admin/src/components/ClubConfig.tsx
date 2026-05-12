@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { adminClient } from "@/lib/supabase";
 import {
   X, Plus, Trash2, Save, Loader2, DollarSign, Clock, BedDouble, Settings2,
@@ -374,6 +374,236 @@ function EntryTiersPanel({ clubId }: { clubId: string }) {
 
 // ── Brand Color ──────────────────────────────────────────────────────────────
 
+// ── General Panel (club info + actions) ───────────────────────────────────────
+
+function GeneralPanel({ clubId, onClose }: { clubId: string; onClose: () => void }) {
+  const [club, setClub] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [domain, setDomain] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    adminClient.from("clubs").select("*").eq("id", clubId).single()
+      .then(({ data }) => {
+        setClub(data);
+        setName(data?.name ?? "");
+        setDomain(data?.domain ?? "");
+        setLogoPreview(data?.logo_url ?? null);
+        setLoading(false);
+      });
+  }, [clubId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    let logoUrl = club?.logo_url;
+    if (logoFile) {
+      const ext = logoFile.name.split(".").pop() ?? "png";
+      const path = `${club?.slug ?? clubId}/logo.${ext}`;
+      await adminClient.storage.from("club-logos").upload(path, logoFile, { upsert: true });
+      const { data: urlData } = adminClient.storage.from("club-logos").getPublicUrl(path);
+      logoUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+    }
+    await adminClient.from("clubs").update({ name: name.trim(), domain: domain.trim() || null, logo_url: logoUrl }).eq("id", clubId);
+    setSaving(false);
+    setEditing(false);
+    setLogoFile(null);
+    toast.success("Club updated");
+    // Reload
+    const { data } = await adminClient.from("clubs").select("*").eq("id", clubId).single();
+    setClub(data);
+    setLogoPreview(data?.logo_url ?? null);
+  };
+
+  const handleSuspend = async () => {
+    const newStatus = club?.status === "suspended" ? "active" : "suspended";
+    await adminClient.from("clubs").update({ status: newStatus }).eq("id", clubId);
+    toast.success(newStatus === "suspended" ? "Club suspended" : "Club reactivated");
+    const { data } = await adminClient.from("clubs").select("*").eq("id", clubId).single();
+    setClub(data);
+  };
+
+  const handleDelete = async () => {
+    await adminClient.from("clubs").update({ status: "deleted", is_active: false }).eq("id", clubId);
+    toast.success("Club soft-deleted");
+    onClose();
+  };
+
+  const handleResetCredentials = async () => {
+    if (!resetEmail.includes("@") || resetPassword.length < 6) {
+      toast.error("Valid email and password (6+) required"); return;
+    }
+    setResetting(true);
+    const { data: roles } = await adminClient.from("user_roles").select("user_id").eq("club_id", clubId).eq("role", "admin");
+    const adminUserId = roles?.[0]?.user_id;
+    if (adminUserId) {
+      const { error } = await adminClient.auth.admin.updateUserById(adminUserId, { email: resetEmail.trim(), password: resetPassword });
+      if (error) { setResetting(false); toast.error(error.message); return; }
+      await adminClient.from("clubs").update({ owner_email: resetEmail.trim() }).eq("id", clubId);
+      toast.success("Admin credentials updated");
+    } else {
+      toast.error("No admin user found");
+    }
+    setResetting(false);
+    setShowReset(false);
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-gray-500 text-sm py-6"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>;
+  if (!club) return <p className="text-gray-500">Club not found</p>;
+
+  return (
+    <div className="space-y-6">
+      {/* Club info card */}
+      <div className="flex items-start gap-4">
+        {club.logo_url ? (
+          <img src={club.logo_url} alt="" className="w-16 h-16 rounded-xl object-cover border border-gray-700" />
+        ) : (
+          <div className="w-16 h-16 rounded-xl bg-brand-600/20 border border-brand-600/30 flex items-center justify-center">
+            <span className="text-2xl">🏢</span>
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xl font-bold text-white">{club.name}</h3>
+          <p className="text-sm text-gray-400 truncate">{club.domain ?? club.slug}</p>
+          <div className="flex items-center gap-3 mt-2">
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border capitalize ${
+              club.status === "active" ? "bg-green-500/10 text-green-400 border-green-500/20"
+              : club.status === "suspended" ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              : "bg-red-500/10 text-red-400 border-red-500/20"
+            }`}>{club.status}</span>
+            <span className="text-xs text-gray-500">{club.owner_email}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Info rows */}
+      <div className="bg-gray-800/30 rounded-xl border border-gray-800 p-4 space-y-2">
+        {[
+          ["Slug", club.slug],
+          ["Domain", club.domain ?? "—"],
+          ["Owner", club.owner_email ?? "—"],
+          ["Created", new Date(club.created_at).toLocaleDateString()],
+          ["Club ID", club.id],
+        ].map(([k, v]) => (
+          <div key={k} className="flex justify-between text-sm">
+            <span className="text-gray-500">{k}</span>
+            <span className="text-white font-mono text-xs truncate max-w-[280px]">{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Edit section */}
+      {editing ? (
+        <div className="bg-gray-800/30 rounded-xl border border-gray-800 p-4 space-y-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Edit Details</p>
+          <div className="space-y-1.5">
+            <label className="text-xs text-gray-500">Club Name</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-brand-500" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-gray-500">Domain</label>
+            <input value={domain} onChange={e => setDomain(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-brand-500" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-gray-500">Logo</label>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); } }} />
+            <div className="flex items-center gap-3">
+              {logoPreview && <img src={logoPreview} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-600" />}
+              <button onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-all">
+                {logoPreview ? "Change" : "Upload"}
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => { setEditing(false); setLogoFile(null); setLogoPreview(club.logo_url); }}
+              className="flex-1 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white transition-all">Cancel</button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-500 disabled:opacity-50 flex items-center justify-center gap-1.5 transition-all">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Reset credentials */}
+      {showReset && (
+        <div className="bg-gray-800/30 rounded-xl border border-gray-800 p-4 space-y-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Reset Admin Credentials</p>
+          <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="New email"
+            className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-brand-500" />
+          <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder="New password (6+)"
+            className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-brand-500" />
+          <div className="flex gap-2">
+            <button onClick={() => setShowReset(false)}
+              className="flex-1 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white transition-all">Cancel</button>
+            <button onClick={handleResetCredentials} disabled={resetting}
+              className="flex-1 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 flex items-center justify-center gap-1.5 transition-all">
+              {resetting ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Reset
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="space-y-2">
+        {!editing && (
+          <button onClick={() => setEditing(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-gray-700 hover:bg-gray-800/50 text-left transition-all">
+            <Pencil className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-white font-medium">Edit Details & Logo</span>
+          </button>
+        )}
+        {!showReset && (
+          <button onClick={() => { setShowReset(true); setResetEmail(club.owner_email ?? ""); }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-gray-700 hover:bg-gray-800/50 text-left transition-all">
+            <span className="text-gray-400">🔑</span>
+            <span className="text-sm text-white font-medium">Reset Admin Credentials</span>
+          </button>
+        )}
+        <button onClick={handleSuspend}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-amber-500/30 hover:bg-amber-500/5 text-left transition-all">
+          <span>{club.status === "suspended" ? "▶️" : "⏸️"}</span>
+          <span className={`text-sm font-medium ${club.status === "suspended" ? "text-green-400" : "text-amber-400"}`}>
+            {club.status === "suspended" ? "Reactivate Club" : "Suspend Club"}
+          </span>
+        </button>
+        {!confirmDelete ? (
+          <button onClick={() => setConfirmDelete(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 hover:border-red-500/30 hover:bg-red-500/5 text-left transition-all">
+            <Trash2 className="w-4 h-4 text-red-400" />
+            <span className="text-sm text-red-400 font-medium">Delete Club</span>
+          </button>
+        ) : (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 space-y-3">
+            <p className="text-sm text-red-300">This will soft-delete the club. Data is preserved but deactivated.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)}
+                className="flex-1 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white transition-all">Cancel</button>
+              <button onClick={handleDelete}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-500 transition-all">Confirm Delete</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Brand Color helpers ──────────────────────────────────────────────────────
+
 function hexToHsl(hex: string): string {
   let r = parseInt(hex.slice(1, 3), 16) / 255;
   let g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -577,6 +807,7 @@ function ClubSettingsPanel({ clubId }: { clubId: string }) {
 // ── Main Config Panel (full-page, tabbed sidebar) ────────────────────────────
 
 const CONFIG_TABS = [
+  { id: "general",  label: "General",          icon: "🏠" },
   { id: "brand",    label: "Brand Color",     icon: "🎨" },
   { id: "packages", label: "Dance Packages",  icon: "💰" },
   { id: "entry",    label: "Door Entry Tiers", icon: "🚪" },
@@ -587,7 +818,7 @@ const CONFIG_TABS = [
 type ConfigTab = typeof CONFIG_TABS[number]["id"];
 
 export function ClubConfig({ clubId, clubName, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<ConfigTab>("brand");
+  const [activeTab, setActiveTab] = useState<ConfigTab>("general");
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -630,6 +861,7 @@ export function ClubConfig({ clubId, clubName, onClose }: Props) {
 
         {/* Right content */}
         <div className="flex-1 bg-gray-900 overflow-y-auto p-6 md:p-8">
+          {activeTab === "general"  && <GeneralPanel clubId={clubId} onClose={onClose} />}
           {activeTab === "brand"    && <BrandColorPanel clubId={clubId} />}
           {activeTab === "packages" && <DanceTiersPanel clubId={clubId} />}
           {activeTab === "entry"    && <EntryTiersPanel clubId={clubId} />}

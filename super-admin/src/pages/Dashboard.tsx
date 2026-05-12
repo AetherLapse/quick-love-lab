@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSuperAuth } from "@/hooks/useSuperAuth";
 import { adminClient } from "@/lib/supabase";
 import { CreateClubModal } from "@/components/CreateClubModal";
-import { ClubActions } from "@/components/ClubActions";
+import { ClubConfig } from "@/components/ClubConfig";
 import {
   Building2, Plus, LogOut, ShieldAlert, Globe, Users, Activity,
   Loader2, Search, CheckCircle2, XCircle, Pause,
@@ -188,12 +188,12 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Club Actions Modal */}
+      {/* Club Config (full-page) */}
       {actionClub && (
-        <ClubActions
-          club={actionClub}
-          onClose={() => setActionClub(null)}
-          onUpdated={() => { setActionClub(null); loadClubs(); }}
+        <ClubConfig
+          clubId={actionClub.id}
+          clubName={actionClub.name}
+          onClose={() => { setActionClub(null); loadClubs(); }}
         />
       )}
     </div>
